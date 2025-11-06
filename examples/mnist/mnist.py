@@ -79,7 +79,7 @@ if __name__ == "__main__":
     NUM_CLASSES = 10
     LR = 0.001
     BATCH_SIZE = 64
-    EPOCHS = 100
+    EPOCHS = 50
     
     DATA_DIR = "./examples/mnist/data/"
     
