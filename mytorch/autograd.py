@@ -1,6 +1,6 @@
-# autograd.py
 
 import numpy as np
+from abc import abstractmethod
 
 # --- Function Base Class ---
 
@@ -64,15 +64,15 @@ class Function:
         """(Optional) Save intermediate values needed for backprop."""
         self.saved_tensors = args
 
+    @abstractmethod
     def forward(self, *args, **kwargs):
         """(Subclass must implement) Performs the actual computation."""
         raise NotImplementedError
 
+    @abstractmethod
     def compute_input_grads(self, grad_output):
         """(Subclass must implement) The raw gradient logic."""
         raise NotImplementedError
-
-# --- Tensor Class ---
 
 class Tensor:
     """
@@ -149,8 +149,6 @@ class Tensor:
     @property
     def dtype(self): return self.data.dtype
     def __repr__(self): return f"Tensor({self.data}, requires_grad={self.requires_grad})"
-
-# --- Function Subclasses ---
 
 class Add(Function):
     def forward(self, x, y): return x + y
@@ -244,34 +242,3 @@ class NLLLoss(Function):
         grad_log_probs = np.zeros((self.N, self.C), dtype=np.float32)
         grad_log_probs[range(self.N), self.targets] = -1.0 / self.N
         return grad_log_probs * grad_output, None # No grad for targets
-
-# --- nn.Module Base Class ---
-
-class Module:
-    """
-    Base class for all neural network modules (layers and models).
-    """
-    
-    def __call__(self, *args, **kwargs):
-        """Makes the module callable, e.g., model(x)"""
-        return self.forward(*args, **kwargs)
-
-    def forward(self, *args, **kwargs):
-        """(Subclass must implement) Defines the forward pass."""
-        raise NotImplementedError
-
-    def parameters(self):
-        """
-        Returns a generator of all parameters (Tensors with requires_grad=True)
-        in this module and its sub-modules.
-        """
-        for name, attr in self.__dict__.items():
-            if isinstance(attr, Tensor) and attr.requires_grad:
-                yield attr
-            elif isinstance(attr, Module):
-                yield from attr.parameters() # Recurse
-
-    def zero_grad(self):
-        """Sets gradients of all parameters to zero."""
-        for p in self.parameters():
-            p.zero_grad()

@@ -1,8 +1,37 @@
 # nn.py
 
 import numpy as np
-from .autograd import Tensor, Module
+from .autograd import Tensor
 from .autograd import NLLLoss as NLLLossFn # Import the Function
+
+class Module:
+    """
+    Base class for all neural network modules (layers and models).
+    """
+    
+    def __call__(self, *args, **kwargs):
+        """Makes the module callable, e.g., model(x)"""
+        return self.forward(*args, **kwargs)
+
+    def forward(self, *args, **kwargs):
+        """(Subclass must implement) Defines the forward pass."""
+        raise NotImplementedError
+
+    def parameters(self):
+        """
+        Returns a generator of all parameters (Tensors with requires_grad=True)
+        in this module and its sub-modules.
+        """
+        for name, attr in self.__dict__.items():
+            if isinstance(attr, Tensor) and attr.requires_grad:
+                yield attr
+            elif isinstance(attr, Module):
+                yield from attr.parameters() # Recurse
+
+    def zero_grad(self):
+        """Sets gradients of all parameters to zero."""
+        for p in self.parameters():
+            p.zero_grad()
 
 class Linear(Module):
     """
