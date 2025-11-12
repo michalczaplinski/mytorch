@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from typing import Any, Generator, Optional
-from .autograd import Tensor
-from .autograd import NLLLoss as NLLLossFn # Import the Function
+from .autograd import Tensor, nll_loss
 
 class Module:
     """
@@ -73,11 +72,4 @@ class LogSoftmax(Module):
         return x.log_softmax(axis=self.axis)
 
 # --- Loss Function ---
-
-def nll_loss(log_probs: Tensor, targets: np.ndarray) -> Tensor:
-    """
-    Computes the Negative Log Likelihood loss.
-    (This is a functional wrapper for the NLLLoss Function)
-    """
-    # Pass targets as a non-Tensor kwarg so only Tensors are tracked in the graph
-    return NLLLossFn.apply(log_probs, targets=targets)
+# nll_loss is imported from autograd at the top of the file
