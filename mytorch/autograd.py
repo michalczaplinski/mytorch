@@ -103,6 +103,21 @@ class Tensor:
     
     def __pow__(self, other: Union[float, int]) -> Tensor:
         return _pow(self, other) # Assumes 'other' is scalar
+    
+    def __truediv__(self, other: Union[Tensor, np.ndarray, Sequence[Any], float, int]) -> Tensor:
+        return _div(self, self._as_tensor(other))
+    
+    def __radd__(self, other: Union[np.ndarray, Sequence[Any], float, int]) -> Tensor:
+        return _add(self._as_tensor(other), self)
+    
+    def __rmul__(self, other: Union[np.ndarray, Sequence[Any], float, int]) -> Tensor:
+        return _mul(self._as_tensor(other), self)
+    
+    def __rsub__(self, other: Union[np.ndarray, Sequence[Any], float, int]) -> Tensor:
+        return _add(self._as_tensor(other), -self)
+    
+    def __rtruediv__(self, other: Union[np.ndarray, Sequence[Any], float, int]) -> Tensor:
+        return _div(self._as_tensor(other), self)
 
     # --- Standard Methods ---
     def sum(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> Tensor:
@@ -197,6 +212,27 @@ def _pow(x: Tensor, c: Union[float, int]) -> Tensor:
             x.grad += grad_output * (c * (x_data ** (c - 1)))
     
     return Tensor(out_data, requires_grad=requires_grad, _parents=(x,), _backward=backward if requires_grad else None)
+
+def _div(x: Tensor, y: Tensor) -> Tensor:
+    """Element-wise division."""
+    requires_grad = x.requires_grad or y.requires_grad
+    out_data = x.data / y.data
+    
+    # Save values needed for backward
+    x_data = x.data
+    y_data = y.data
+    
+    def backward(grad_output: np.ndarray) -> None:
+        if x.requires_grad:
+            if x.grad is None:
+                x.grad = np.zeros_like(x.data)
+            x.grad += _unbroadcast_grad(x.shape, grad_output / y_data)
+        if y.requires_grad:
+            if y.grad is None:
+                y.grad = np.zeros_like(y.data)
+            y.grad += _unbroadcast_grad(y.shape, -grad_output * x_data / (y_data ** 2))
+    
+    return Tensor(out_data, requires_grad=requires_grad, _parents=(x, y), _backward=backward if requires_grad else None)
 
 def _matmul(x: Tensor, y: Tensor) -> Tensor:
     """Matrix multiplication."""

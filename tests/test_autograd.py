@@ -83,6 +83,15 @@ class TestTensorOperations:
         
         assert np.allclose(y.data, [1, 4, 9])
         
+    def test_division(self):
+        """Test division"""
+        x = Tensor([4, 6, 8], requires_grad=True)
+        y = Tensor([2, 3, 4], requires_grad=True)
+        z = x / y
+        
+        assert np.allclose(z.data, [2, 2, 2])
+        assert z.requires_grad is True
+        
     def test_matmul(self):
         """Test matrix multiplication"""
         x = Tensor([[1, 2], [3, 4]], requires_grad=True)
@@ -122,6 +131,34 @@ class TestTensorOperations:
         y = x.relu()
         
         assert np.allclose(y.data, [0, 0, 1, 2])
+        
+    def test_reverse_add(self):
+        """Test reverse addition (scalar + tensor)"""
+        x = Tensor([1, 2, 3], requires_grad=True)
+        y = 5 + x
+        
+        assert np.allclose(y.data, [6, 7, 8])
+        
+    def test_reverse_mul(self):
+        """Test reverse multiplication (scalar * tensor)"""
+        x = Tensor([1, 2, 3], requires_grad=True)
+        y = 2 * x
+        
+        assert np.allclose(y.data, [2, 4, 6])
+        
+    def test_reverse_sub(self):
+        """Test reverse subtraction (scalar - tensor)"""
+        x = Tensor([1, 2, 3], requires_grad=True)
+        y = 10 - x
+        
+        assert np.allclose(y.data, [9, 8, 7])
+        
+    def test_reverse_div(self):
+        """Test reverse division (scalar / tensor)"""
+        x = Tensor([2, 4, 5], requires_grad=True)
+        y = 10 / x
+        
+        assert np.allclose(y.data, [5, 2.5, 2])
         
     def test_log_softmax(self):
         """Test log softmax"""
@@ -173,6 +210,17 @@ class TestBackpropagation:
         
         # dy/dx = 2x
         assert np.allclose(x.grad, [4, 6])
+        
+    def test_division_backward(self):
+        """Test gradients for division"""
+        x = Tensor([4, 6], requires_grad=True)
+        y = Tensor([2, 3], requires_grad=True)
+        z = x / y
+        z.backward(np.ones(2))
+        
+        # dz/dx = 1/y, dz/dy = -x/y^2
+        assert np.allclose(x.grad, [0.5, 1.0/3.0])
+        assert np.allclose(y.grad, [-1.0, -2.0/3.0])
         
     def test_matmul_backward(self):
         """Test gradients for matrix multiplication"""
