@@ -87,21 +87,41 @@ for epoch in range(10):
 - Negation: `-x`
 - Subtraction: `x - y`
 - Power: `x ** 2`
+- Division: `x / y`
 - Sum: `x.sum(axis=0)`
 - Mean: `x.mean(axis=1)`
 
 ### Activations
 - ReLU: `x.relu()`
+- Sigmoid: `x.sigmoid()`
+- Tanh: `x.tanh()`
 - LogSoftmax: `x.log_softmax(axis=-1)`
 
 ### Loss Functions
 - Negative Log Likelihood: `nll_loss(predictions, targets)`
 
+### Optimizers
+- **SGD**: Stochastic Gradient Descent with configurable learning rate
+- **Adam**: Adaptive Moment Estimation with momentum and adaptive learning rates
+
+### Model Persistence
+```python
+# Save model
+model.save('model.pkl')
+
+# Load model
+model.load('model.pkl')
+
+# Or use state_dict
+state = model.state_dict()
+model.load_state_dict(state)
+```
+
 ## Architecture
 
 - `mytorch.autograd`: Core automatic differentiation engine with `Tensor` class
 - `mytorch.nn`: Neural network building blocks (`Module`, `Linear`, activation functions)
-- `mytorch.optim`: Optimization algorithms (SGD)
+- `mytorch.optim`: Optimization algorithms (SGD, Adam)
 
 ## Example: MNIST Training
 
