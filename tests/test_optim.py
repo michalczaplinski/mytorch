@@ -5,7 +5,8 @@ import numpy as np
 import pytest
 from mytorch.autograd import Tensor
 from mytorch.nn import Linear
-from mytorch.optim import SGD
+from mytorch.optim import SGD, Adam
+
 
 
 class TestSGD:
@@ -114,6 +115,111 @@ class TestSGD:
         
         # param2 should have changed more
         assert abs(param2.data[0] - 1.0) > abs(param1.data[0] - 1.0)
+
+
+class TestAdam:
+    """Test Adam optimizer"""
+    
+    def test_adam_initialization(self):
+        """Test Adam initialization"""
+        params = [Tensor([1, 2], requires_grad=True)]
+        optimizer = Adam(params, lr=0.001)
+        
+        assert optimizer.lr == 0.001
+        assert len(optimizer.params) == 1
+        assert optimizer.t == 0
+        assert len(optimizer.m) == 1
+        assert len(optimizer.v) == 1
+        
+    def test_adam_step(self):
+        """Test Adam parameter update"""
+        param = Tensor([1.0, 2.0], requires_grad=True)
+        optimizer = Adam([param], lr=0.1)
+        
+        # Set gradient manually
+        param.grad = np.array([0.5, 1.0])
+        
+        # Store original values
+        original = param.data.copy()
+        
+        # Take optimization step
+        optimizer.step()
+        
+        # Parameters should be updated
+        assert not np.allclose(param.data, original)
+        # Time step should increment
+        assert optimizer.t == 1
+        
+    def test_adam_zero_grad(self):
+        """Test zeroing gradients through optimizer"""
+        params = [
+            Tensor([1, 2], requires_grad=True),
+            Tensor([3, 4], requires_grad=True)
+        ]
+        optimizer = Adam(params, lr=0.001)
+        
+        # Set gradients
+        for p in params:
+            p.grad = np.ones_like(p.data)
+        
+        # Zero them
+        optimizer.zero_grad()
+        
+        # Check all are zero
+        for p in params:
+            assert np.allclose(p.grad, 0.0)
+            
+    def test_adam_with_model(self):
+        """Test Adam with a simple model"""
+        layer = Linear(2, 1)
+        optimizer = Adam(layer.parameters(), lr=0.01)
+        
+        # Forward pass
+        x = Tensor([[1.0, 2.0]], requires_grad=True)
+        y = layer(x)
+        loss = y.sum()
+        
+        # Store original weights
+        original_weight = layer.weight.data.copy()
+        original_bias = layer.bias.data.copy()
+        
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+        
+        # Optimization step
+        optimizer.step()
+        
+        # Weights should have changed
+        assert not np.allclose(layer.weight.data, original_weight)
+        assert not np.allclose(layer.bias.data, original_bias)
+        
+    def test_adam_multiple_steps(self):
+        """Test multiple optimization steps with Adam"""
+        param = Tensor([10.0], requires_grad=True)
+        optimizer = Adam([param], lr=0.1)
+        
+        # Simulate gradient descent on f(x) = x^2
+        for _ in range(20):
+            # Compute gradient: df/dx = 2x
+            param.grad = 2 * param.data
+            optimizer.step()
+        
+        # After multiple steps, parameter should decrease
+        assert param.data[0] < 10.0
+        
+    def test_adam_momentum(self):
+        """Test that Adam maintains momentum"""
+        param = Tensor([1.0], requires_grad=True)
+        optimizer = Adam([param], lr=0.01, betas=(0.9, 0.999))
+        
+        # First step
+        param.grad = np.array([1.0])
+        optimizer.step()
+        
+        # Check that momentum is stored
+        assert not np.allclose(optimizer.m[0], 0.0)
+        assert not np.allclose(optimizer.v[0], 0.0)
 
 
 class TestOptimizationScenarios:
