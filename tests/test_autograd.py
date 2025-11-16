@@ -132,6 +132,26 @@ class TestTensorOperations:
         
         assert np.allclose(y.data, [0, 0, 1, 2])
         
+    def test_sigmoid(self):
+        """Test Sigmoid activation"""
+        x = Tensor([0, 1, -1], requires_grad=True)
+        y = x.sigmoid()
+        
+        # Sigmoid(0) = 0.5, Sigmoid(1) ≈ 0.73, Sigmoid(-1) ≈ 0.27
+        assert np.allclose(y.data[0], 0.5)
+        assert y.data[1] > 0.7 and y.data[1] < 0.8
+        assert y.data[2] > 0.2 and y.data[2] < 0.3
+        
+    def test_tanh(self):
+        """Test Tanh activation"""
+        x = Tensor([0, 1, -1], requires_grad=True)
+        y = x.tanh()
+        
+        # Tanh(0) = 0, Tanh(1) ≈ 0.76, Tanh(-1) ≈ -0.76
+        assert np.allclose(y.data[0], 0.0)
+        assert y.data[1] > 0.7 and y.data[1] < 0.8
+        assert y.data[2] > -0.8 and y.data[2] < -0.7
+        
     def test_reverse_add(self):
         """Test reverse addition (scalar + tensor)"""
         x = Tensor([1, 2, 3], requires_grad=True)
@@ -240,6 +260,24 @@ class TestBackpropagation:
         
         # Gradient is 0 for negative inputs, 1 for positive
         assert np.allclose(x.grad, [0, 0, 1])
+        
+    def test_sigmoid_backward(self):
+        """Test gradients for Sigmoid"""
+        x = Tensor([0.0], requires_grad=True)
+        y = x.sigmoid()
+        y.backward()
+        
+        # Gradient at x=0: σ(0) * (1 - σ(0)) = 0.5 * 0.5 = 0.25
+        assert np.allclose(x.grad, [0.25])
+        
+    def test_tanh_backward(self):
+        """Test gradients for Tanh"""
+        x = Tensor([0.0], requires_grad=True)
+        y = x.tanh()
+        y.backward()
+        
+        # Gradient at x=0: 1 - tanh(0)^2 = 1 - 0 = 1
+        assert np.allclose(x.grad, [1.0])
         
     def test_chain_rule(self):
         """Test chain rule through multiple operations"""

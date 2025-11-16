@@ -128,6 +128,16 @@ class ReLU(Module):
     def forward(self, x: Tensor) -> Tensor:
         return x.relu()
 
+class Sigmoid(Module):
+    """A simple stateless Sigmoid activation module."""
+    def forward(self, x: Tensor) -> Tensor:
+        return x.sigmoid()
+
+class Tanh(Module):
+    """A simple stateless Tanh activation module."""
+    def forward(self, x: Tensor) -> Tensor:
+        return x.tanh()
+
 class LogSoftmax(Module):
     """A simple stateless LogSoftmax module."""
     axis: int

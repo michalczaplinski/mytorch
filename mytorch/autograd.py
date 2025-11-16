@@ -129,6 +129,12 @@ class Tensor:
     def relu(self) -> Tensor:
         return _relu(self)
     
+    def sigmoid(self) -> Tensor:
+        return _sigmoid(self)
+    
+    def tanh(self) -> Tensor:
+        return _tanh(self)
+    
     def log_softmax(self, axis: int = -1) -> Tensor:
         return _log_softmax(self, axis=axis)
 
@@ -266,6 +272,37 @@ def _relu(x: Tensor) -> Tensor:
             if x.grad is None:
                 x.grad = np.zeros_like(x.data)
             x.grad += grad_output * mask
+    
+    return Tensor(out_data, requires_grad=requires_grad, _parents=(x,), _backward=backward if requires_grad else None)
+
+def _sigmoid(x: Tensor) -> Tensor:
+    """Sigmoid activation: σ(x) = 1 / (1 + exp(-x))."""
+    requires_grad = x.requires_grad
+    # Numerically stable sigmoid
+    sigmoid_data = 1.0 / (1.0 + np.exp(-x.data))
+    out_data = sigmoid_data
+    
+    def backward(grad_output: np.ndarray) -> None:
+        if x.requires_grad:
+            if x.grad is None:
+                x.grad = np.zeros_like(x.data)
+            # Derivative: σ'(x) = σ(x) * (1 - σ(x))
+            x.grad += grad_output * sigmoid_data * (1.0 - sigmoid_data)
+    
+    return Tensor(out_data, requires_grad=requires_grad, _parents=(x,), _backward=backward if requires_grad else None)
+
+def _tanh(x: Tensor) -> Tensor:
+    """Hyperbolic tangent activation."""
+    requires_grad = x.requires_grad
+    tanh_data = np.tanh(x.data)
+    out_data = tanh_data
+    
+    def backward(grad_output: np.ndarray) -> None:
+        if x.requires_grad:
+            if x.grad is None:
+                x.grad = np.zeros_like(x.data)
+            # Derivative: tanh'(x) = 1 - tanh(x)^2
+            x.grad += grad_output * (1.0 - tanh_data ** 2)
     
     return Tensor(out_data, requires_grad=requires_grad, _parents=(x,), _backward=backward if requires_grad else None)
 

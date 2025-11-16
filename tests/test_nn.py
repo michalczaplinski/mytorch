@@ -4,7 +4,8 @@ Tests for mytorch.nn module
 import numpy as np
 import pytest
 from mytorch.autograd import Tensor
-from mytorch.nn import Module, Linear, ReLU, LogSoftmax
+from mytorch.nn import Module, Linear, ReLU, Sigmoid, Tanh, LogSoftmax
+
 
 
 class TestModule:
@@ -106,6 +107,44 @@ class TestActivations:
         y.backward(np.ones(4))
         
         assert np.allclose(x.grad, [0, 0, 1, 1])
+        
+    def test_sigmoid_forward(self):
+        """Test Sigmoid forward pass"""
+        sigmoid = Sigmoid()
+        x = Tensor([0, 1, -1])
+        y = sigmoid(x)
+        
+        # Check sigmoid outputs are in (0, 1)
+        assert np.all(y.data > 0) and np.all(y.data < 1)
+        assert np.allclose(y.data[0], 0.5)
+        
+    def test_sigmoid_backward(self):
+        """Test Sigmoid backward pass"""
+        sigmoid = Sigmoid()
+        x = Tensor([0.0], requires_grad=True)
+        y = sigmoid(x)
+        y.backward()
+        
+        assert np.allclose(x.grad, [0.25])
+        
+    def test_tanh_forward(self):
+        """Test Tanh forward pass"""
+        tanh = Tanh()
+        x = Tensor([0, 1, -1])
+        y = tanh(x)
+        
+        # Check tanh outputs are in (-1, 1)
+        assert np.all(y.data > -1) and np.all(y.data < 1)
+        assert np.allclose(y.data[0], 0.0)
+        
+    def test_tanh_backward(self):
+        """Test Tanh backward pass"""
+        tanh = Tanh()
+        x = Tensor([0.0], requires_grad=True)
+        y = tanh(x)
+        y.backward()
+        
+        assert np.allclose(x.grad, [1.0])
         
     def test_log_softmax_forward(self):
         """Test LogSoftmax forward pass"""
