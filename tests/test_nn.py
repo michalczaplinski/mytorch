@@ -197,3 +197,126 @@ class TestComposedModel:
         # Check gradients exist
         for p in model.parameters():
             assert p.grad is not None
+
+
+class TestModelSaveLoad:
+    """Test model save/load functionality"""
+    
+    def test_state_dict(self):
+        """Test getting state dict from a model"""
+        layer = Linear(3, 2)
+        state = layer.state_dict()
+        
+        assert 'weight' in state
+        assert 'bias' in state
+        assert state['weight'].shape == (3, 2)
+        assert state['bias'].shape == (2,)
+        
+    def test_load_state_dict(self):
+        """Test loading state dict into a model"""
+        layer1 = Linear(3, 2)
+        layer2 = Linear(3, 2)
+        
+        # Get state from layer1
+        state = layer1.state_dict()
+        
+        # Load into layer2
+        layer2.load_state_dict(state)
+        
+        # Verify weights are the same
+        assert np.allclose(layer1.weight.data, layer2.weight.data)
+        assert np.allclose(layer1.bias.data, layer2.bias.data)
+        
+    def test_save_load(self):
+        """Test saving and loading model to/from file"""
+        import tempfile
+        import os
+        
+        # Create a model
+        layer = Linear(5, 3)
+        original_weight = layer.weight.data.copy()
+        original_bias = layer.bias.data.copy()
+        
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as f:
+            temp_path = f.name
+        
+        try:
+            layer.save(temp_path)
+            
+            # Create a new model and load
+            new_layer = Linear(5, 3)
+            new_layer.load(temp_path)
+            
+            # Verify weights are the same
+            assert np.allclose(new_layer.weight.data, original_weight)
+            assert np.allclose(new_layer.bias.data, original_bias)
+        finally:
+            # Clean up
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+    def test_nested_module_save_load(self):
+        """Test save/load with nested modules"""
+        import tempfile
+        import os
+        
+        class SimpleMLP(Module):
+            def __init__(self):
+                super().__init__()
+                self.fc1 = Linear(10, 5)
+                self.fc2 = Linear(5, 2)
+                
+            def forward(self, x):
+                return self.fc2(self.fc1(x))
+        
+        # Create and save model
+        model = SimpleMLP()
+        original_state = model.state_dict()
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as f:
+            temp_path = f.name
+            
+        try:
+            model.save(temp_path)
+            
+            # Create new model and load
+            new_model = SimpleMLP()
+            new_model.load(temp_path)
+            new_state = new_model.state_dict()
+            
+            # Verify all parameters are the same
+            for key in original_state:
+                assert np.allclose(original_state[key], new_state[key])
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+    def test_model_output_after_load(self):
+        """Test that model produces same output after save/load"""
+        import tempfile
+        import os
+        
+        layer = Linear(3, 2)
+        x = Tensor(np.random.randn(5, 3))
+        
+        # Get output before save
+        output_before = layer(x).data.copy()
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as f:
+            temp_path = f.name
+            
+        try:
+            # Save and load
+            layer.save(temp_path)
+            new_layer = Linear(3, 2)
+            new_layer.load(temp_path)
+            
+            # Get output after load
+            output_after = new_layer(x).data
+            
+            # Outputs should be identical
+            assert np.allclose(output_before, output_after)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
