@@ -17,14 +17,14 @@ from mytorch.optim import SGD
 # --- 1. Model Definition ---
 
 class SimpleMLP(Module):
-    def __init__(self, input_size, hidden_size, num_classes):
+    def __init__(self, input_size: int, hidden_size: int, num_classes: int) -> None:
         super().__init__()
         self.fc1 = Linear(input_size, hidden_size)
         self.relu1 = ReLU()
         self.fc2 = Linear(hidden_size, num_classes)
         self.log_softmax = LogSoftmax(axis=1) # Apply softmax along class dimension
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         x = self.fc1(x)
         x = self.relu1(x)
         x = self.fc2(x)
@@ -33,15 +33,15 @@ class SimpleMLP(Module):
 
 # --- 2. Data Loading (NumPy-only) ---
 
-def fetch_mnist(data_path="."):
+def fetch_mnist(data_path: str = ".") -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Parses the MNIST files in raw ubyte format (not gzipped).
     """
-    data_path = Path(data_path)
+    data_dir = Path(data_path)
 
-    print(data_path)
+    print(data_dir)
     
-    def parse_images(path):
+    def parse_images(path: Path | str) -> np.ndarray:
         with open(path, 'rb') as f:
             # Read header: Magic(4), NumImages(4), Rows(4), Cols(4)
             magic, num_images, rows, cols = struct.unpack('>IIII', f.read(16))
@@ -51,19 +51,19 @@ def fetch_mnist(data_path="."):
             data = np.frombuffer(f.read(), dtype=np.uint8)
             return data.reshape(num_images, rows * cols)
 
-    def parse_labels(path):
+    def parse_labels(path: Path | str) -> np.ndarray:
         with open(path, 'rb') as f:
             # Read header: Magic(4), NumItems(4)
-            magic, num_items = struct.unpack('>II', f.read(8))
+            magic, _ = struct.unpack('>II', f.read(8))
             if magic != 2049:
                 raise ValueError(f"Invalid MNIST label file magic number: {magic}")
             # Read data
             return np.frombuffer(f.read(), dtype=np.uint8)
 
-    X_train = parse_images(data_path / "train-images.idx3-ubyte")
-    y_train = parse_labels(data_path / "train-labels.idx1-ubyte")
-    X_test = parse_images(data_path / "t10k-images.idx3-ubyte")
-    y_test = parse_labels(data_path / "t10k-labels.idx1-ubyte")
+    X_train = parse_images(data_dir / "train-images.idx3-ubyte")
+    y_train = parse_labels(data_dir / "train-labels.idx1-ubyte")
+    X_test = parse_images(data_dir / "t10k-images.idx3-ubyte")
+    y_test = parse_labels(data_dir / "t10k-labels.idx1-ubyte")
     
     # Normalize and convert types
     return (X_train.astype(np.float32) / 255.0, y_train.astype(np.int64),
@@ -143,5 +143,7 @@ if __name__ == "__main__":
     # Get class predictions (argmax of log_probs)
     pred_labels = np.argmax(test_preds_tensor.data, axis=1)
     
-    accuracy = np.mean(pred_labels == y_test)
+    # Compute accuracy as the mean of correct predictions
+    correct_predictions = (pred_labels == y_test).astype(np.float32)
+    accuracy: float = correct_predictions.mean().item()
     print(f"Test Accuracy: {accuracy * 100:.2f}%")

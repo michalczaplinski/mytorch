@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
-from typing import Any, Generator, Optional
+from typing import Any, Generator
 from .autograd import Tensor
 from .autograd import NLLLoss as NLLLossFn # Import the Function
 
@@ -25,7 +25,7 @@ class Module:
         Returns a generator of all parameters (Tensors with requires_grad=True)
         in this module and its sub-modules.
         """
-        for name, attr in self.__dict__.items():
+        for _, attr in self.__dict__.items():
             if isinstance(attr, Tensor) and attr.requires_grad:
                 yield attr
             elif isinstance(attr, Module):

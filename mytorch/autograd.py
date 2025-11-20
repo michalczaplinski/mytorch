@@ -133,7 +133,7 @@ class Tensor:
 
         # Apply backward pass in reverse topological order
         for v in reversed(topo):
-            if v._ctx:
+            if v._ctx and v.grad is not None:
                 v._ctx.backward(v.grad)
 
     def zero_grad(self) -> None:
@@ -160,10 +160,10 @@ class Tensor:
         return Neg.apply(self)
     
     def __sub__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
-        return self + (-other)
+        return self + (-self._as_tensor(other))
     
     def __pow__(self, other: float | int) -> Tensor:
-        return Pow.apply(self, other) # Assumes 'other' is scalar
+        return Pow.apply(self, c=other) # Pass scalar as kwarg
 
     # --- Standard Methods ---
     def sum(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
@@ -328,8 +328,8 @@ class LogSoftmax(Function):
         return grad_output - (softmax_output * grad_sum)
 
 class NLLLoss(Function):
-    N: int
-    C: int
+    n_samples: int
+    n_classes: int
     targets: np.ndarray
     
     @override
@@ -338,13 +338,13 @@ class NLLLoss(Function):
         if targets is None:
             raise ValueError("targets must be provided")
         self.targets = targets
-        N, C = log_probs.shape
-        self.N, self.C = N, C
-        correct_log_probs = log_probs[range(N), targets]
+        n_samples, n_classes = log_probs.shape
+        self.n_samples, self.n_classes = n_samples, n_classes
+        correct_log_probs = log_probs[range(n_samples), targets]
         return -correct_log_probs.mean()
     
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, None]:
-        grad_log_probs = np.zeros((self.N, self.C), dtype=np.float32)
-        grad_log_probs[range(self.N), self.targets] = -1.0 / self.N
+        grad_log_probs = np.zeros((self.n_samples, self.n_classes), dtype=np.float32)
+        grad_log_probs[range(self.n_samples), self.targets] = -1.0 / self.n_samples
         return grad_log_probs * grad_output, None # No grad for targets
