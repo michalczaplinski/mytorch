@@ -1,0 +1,818 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+examples/
+  mnist/
+    data/
+      t10k-images.idx3-ubyte
+      t10k-labels.idx1-ubyte
+      train-images.idx3-ubyte
+      train-labels.idx1-ubyte
+    mnist.py
+mytorch/
+  __init__.py
+  autograd.py
+  nn.py
+  optim.py
+.gitignore
+.python-version
+main.py
+pyproject.toml
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".gitignore">
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+</file>
+
+<file path=".python-version">
+3.13
+</file>
+
+<file path="main.py">
+def main():
+    print("Hello from mytorch!")
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="pyproject.toml">
+[project]
+name = "mytorch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.3.4",
+]
+</file>
+
+<file path="README.md">
+### Installation
+
+```bash
+uv sync
+```
+
+### Running the MNIST example
+
+```bash
+uv run examples/mnist/mnist.py
+```
+</file>
+
+<file path="examples/mnist/mnist.py">
+# train_mnist.py
+
+import numpy as np
+import struct
+import sys
+from pathlib import Path
+
+import os
+# Ensure project root is on sys.path when running this script directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+# Import our framework components
+from mytorch.autograd import Tensor
+from mytorch.nn import Module, Linear, ReLU, LogSoftmax, nll_loss
+from mytorch.optim import SGD
+
+# --- 1. Model Definition ---
+
+class SimpleMLP(Module):
+    def __init__(self, input_size: int, hidden_size: int, num_classes: int) -> None:
+        super().__init__()
+        self.fc1 = Linear(input_size, hidden_size)
+        self.relu1 = ReLU()
+        self.fc2 = Linear(hidden_size, num_classes)
+        self.log_softmax = LogSoftmax(axis=1) # Apply softmax along class dimension
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.fc1(x)
+        x = self.relu1(x)
+        x = self.fc2(x)
+        x = self.log_softmax(x)
+        return x
+
+# --- 2. Data Loading (NumPy-only) ---
+
+def fetch_mnist(data_path: str = ".") -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Parses the MNIST files in raw ubyte format (not gzipped).
+    """
+    data_dir = Path(data_path)
+
+    print(data_dir)
+    
+    def parse_images(path: Path | str) -> np.ndarray:
+        with open(path, 'rb') as f:
+            # Read header: Magic(4), NumImages(4), Rows(4), Cols(4)
+            magic, num_images, rows, cols = struct.unpack('>IIII', f.read(16))
+            if magic != 2051:
+                raise ValueError(f"Invalid MNIST image file magic number: {magic}")
+            # Read data
+            data = np.frombuffer(f.read(), dtype=np.uint8)
+            return data.reshape(num_images, rows * cols)
+
+    def parse_labels(path: Path | str) -> np.ndarray:
+        with open(path, 'rb') as f:
+            # Read header: Magic(4), NumItems(4)
+            magic, _ = struct.unpack('>II', f.read(8))
+            if magic != 2049:
+                raise ValueError(f"Invalid MNIST label file magic number: {magic}")
+            # Read data
+            return np.frombuffer(f.read(), dtype=np.uint8)
+
+    X_train = parse_images(data_dir / "train-images.idx3-ubyte")
+    y_train = parse_labels(data_dir / "train-labels.idx1-ubyte")
+    X_test = parse_images(data_dir / "t10k-images.idx3-ubyte")
+    y_test = parse_labels(data_dir / "t10k-labels.idx1-ubyte")
+    
+    # Normalize and convert types
+    return (X_train.astype(np.float32) / 255.0, y_train.astype(np.int64),
+            X_test.astype(np.float32) / 255.0, y_test.astype(np.int64))
+
+# --- 3. Main Training Script ---
+
+if __name__ == "__main__":
+    
+    # --- Config ---
+    INPUT_SIZE = 784  # 28x28
+    HIDDEN_SIZE = 64
+    NUM_CLASSES = 10
+    LR = 0.001
+    BATCH_SIZE = 64
+    EPOCHS = 50
+    
+    DATA_DIR = "./examples/mnist/data/"
+    
+    # --- Load Data ---
+    print(f"Loading MNIST data from {DATA_DIR}...")
+    try:
+        X_train, y_train, X_test, y_test = fetch_mnist(DATA_DIR)
+        print(f"Data loaded: {X_train.shape[0]} train, {X_test.shape[0]} test samples.")
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}")
+        print("Could not load MNIST data.")
+        sys.exit(1)
+    
+    # --- Initialize Model and Optimizer ---
+    model = SimpleMLP(INPUT_SIZE, HIDDEN_SIZE, NUM_CLASSES)
+    optimizer = SGD(model.parameters(), lr=LR)
+    
+    # --- Training Loop ---
+    print("Starting training...")
+    for epoch in range(EPOCHS):
+        num_batches = X_train.shape[0] // BATCH_SIZE
+        total_loss = 0.0
+        
+        # Shuffle data
+        perm = np.random.permutation(X_train.shape[0])
+        
+        for i in range(num_batches):
+            # Get batch
+            start = i * BATCH_SIZE
+            end = start + BATCH_SIZE
+            idx = perm[start:end]
+            
+            X_batch = Tensor(X_train[idx])
+            y_batch_targets = y_train[idx] # Targets are just numpy arrays
+
+            # 1. Zero gradients
+            optimizer.zero_grad()
+            
+            # 2. Forward pass
+            predictions = model(X_batch)
+            
+            # 3. Compute loss
+            loss = nll_loss(predictions, y_batch_targets)
+            total_loss += loss.data.item()
+            
+            # 4. Backward pass
+            loss.backward()
+            
+            # 5. Update weights
+            optimizer.step()
+        
+        avg_loss = total_loss / num_batches
+        print(f"Epoch {epoch+1}/{EPOCHS}, Average Loss: {avg_loss:.4f}")
+
+    # --- Evaluation ---
+    print("Training complete. Evaluating on test set...")
+    
+    # No need for gradients during evaluation
+    test_preds_tensor = model(Tensor(X_test, requires_grad=False))
+    
+    # Get class predictions (argmax of log_probs)
+    pred_labels = np.argmax(test_preds_tensor.data, axis=1)
+    
+    # Compute accuracy as the mean of correct predictions
+    correct_predictions = (pred_labels == y_test).astype(np.float32)
+    accuracy: float = correct_predictions.mean().item()
+    print(f"Test Accuracy: {accuracy * 100:.2f}%")
+</file>
+
+<file path="mytorch/optim.py">
+from __future__ import annotations
+
+from typing import Iterable
+import numpy as np
+from .autograd import Tensor
+
+class SGD:
+    """
+    Implements stochastic gradient descent.
+    """
+    params: list[Tensor]
+    lr: float
+    
+    def __init__(self, params: Iterable[Tensor], lr: float = 0.01) -> None:
+        """
+        Args:
+            params: An iterable of Tensors to optimize.
+            lr: Learning rate.
+        """
+        self.params = list(params)
+        self.lr = lr
+
+    def step(self) -> None:
+        """Performs a single optimization step."""
+        for p in self.params:
+            if p.grad is not None:
+                # The core update rule
+                p.data -= self.lr * p.grad
+
+    def zero_grad(self) -> None:
+        """
+        Clears the gradients of all parameters this optimizer is managing.
+        (Convenience method, same as model.zero_grad()).
+        """
+        for p in self.params:
+            p.zero_grad()
+
+
+class Adam:
+    """
+    Implements Adam algorithm.
+    """
+    params: list[Tensor]
+    lr: float
+    beta1: float
+    beta2: float
+    eps: float
+    state: dict[Tensor, dict[str, np.ndarray]]
+    t: int
+    
+    def __init__(self, params: Iterable[Tensor], lr: float = 0.001, betas: tuple[float, float] = (0.9, 0.999), eps: float = 1e-8) -> None:
+        self.params = list(params)
+        self.lr = lr
+        self.beta1, self.beta2 = betas
+        self.eps = eps
+        self.state = {}
+        self.t = 0 # Time step (needed for bias correction)
+
+    def step(self) -> None:
+        self.t += 1
+        
+        for p in self.params:
+            if p.grad is None:
+                continue
+
+            # Initialize state for this parameter if it doesn't exist
+            if p not in self.state:
+                self.state[p] = {
+                    'm': np.zeros_like(p.data), 
+                    'v': np.zeros_like(p.data)
+                }
+            
+            state = self.state[p]
+            m, v = state['m'], state['v']
+            g = p.grad
+
+            # 1. Update raw moving averages (Momentum & RMSProp)
+            # Note: We use in-place operations ([:]) to update the numpy arrays inside the dict
+            m[:] = self.beta1 * m + (1 - self.beta1) * g
+            v[:] = self.beta2 * v + (1 - self.beta2) * (g ** 2)
+
+            # 2. Bias Correction
+            # (Boosts magnitude in early steps to counter initialization at zero)
+            m_hat = m / (1 - self.beta1 ** self.t)
+            v_hat = v / (1 - self.beta2 ** self.t)
+
+            # 3. Update Parameters
+            p.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+
+    def zero_grad(self) -> None:
+        """Clears the gradients of all parameters."""
+        for p in self.params:
+            p.zero_grad()
+</file>
+
+<file path="mytorch/nn.py">
+# nn.py
+
+from __future__ import annotations
+
+import numpy as np
+from typing import Any, Generator
+from .autograd import Tensor
+from .autograd import NLLLoss as NLLLossFn # Import the Function
+
+class Module:
+    """
+    Base class for all neural network modules (layers and models).
+    """
+    
+    def __call__(self, *args: Any, **kwargs: Any) -> Tensor:
+        """Makes the module callable, e.g., model(x)"""
+        return self.forward(*args, **kwargs)
+
+    def forward(self, *args: Any, **kwargs: Any) -> Tensor:
+        """(Subclass must implement) Defines the forward pass."""
+        raise NotImplementedError
+
+    def parameters(self) -> Generator[Tensor, None, None]:
+        """
+        Returns a generator of all parameters (Tensors with requires_grad=True)
+        in this module and its sub-modules.
+        """
+        for _, attr in self.__dict__.items():
+            if isinstance(attr, Tensor) and attr.requires_grad:
+                yield attr
+            elif isinstance(attr, Module):
+                yield from attr.parameters() # Recurse
+
+    def zero_grad(self) -> None:
+        """Sets gradients of all parameters to zero."""
+        for p in self.parameters():
+            p.zero_grad()
+
+class Linear(Module):
+    """
+    A simple linear layer: y = x @ W + b
+    """
+    weight: Tensor
+    bias: Tensor
+    
+    def __init__(self, in_features: int, out_features: int) -> None:
+        super().__init__()
+        # Kaiming He initialization
+        stdv = np.sqrt(2.0 / in_features)
+        self.weight = Tensor(
+            np.random.normal(0, stdv, (in_features, out_features)), 
+            requires_grad=True
+        )
+        self.bias = Tensor(np.zeros(out_features), requires_grad=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return (x @ self.weight) + self.bias
+
+class ReLU(Module):
+    """A simple stateless ReLU activation module."""
+    def forward(self, x: Tensor) -> Tensor:
+        return x.relu()
+
+class LogSoftmax(Module):
+    """A simple stateless LogSoftmax module."""
+    axis: int
+    
+    def __init__(self, axis: int = -1) -> None:
+        super().__init__()
+        self.axis = axis
+        
+    def forward(self, x: Tensor) -> Tensor:
+        return x.log_softmax(axis=self.axis)
+
+# --- Loss Function ---
+
+def nll_loss(log_probs: Tensor, targets: np.ndarray) -> Tensor:
+    """
+    Computes the Negative Log Likelihood loss.
+    (This is a functional wrapper for the NLLLoss Function)
+    """
+    # Pass targets as a non-Tensor kwarg so only Tensors are tracked in the graph
+    return NLLLossFn.apply(log_probs, targets=targets)
+</file>
+
+<file path="mytorch/autograd.py">
+from __future__ import annotations
+
+import numpy as np
+from abc import abstractmethod
+from collections.abc import Sequence
+from typing import Any, override
+
+# --- Function Base Class ---
+
+class Function:
+    """
+    Base class for all operations.
+    Handles the graph creation and provides forward/backward methods.
+    """
+    
+    inputs: tuple[Tensor, ...]
+    """The input tensors that were used to create the output tensor
+    (e.g., if output = a + b, then inputs = (a, b)). """
+    
+    saved_tensors: tuple[Any, ...]
+    """The tensors that were saved for backward pass (e.g., x, y for Mul). """
+    
+    @classmethod
+    def apply(cls, *inputs: Tensor, **kwargs: Any) -> Tensor:
+        """
+        Runs the forward pass and connects the graph.
+        'inputs' must be Tensors.
+        'kwargs' are non-Tensor arguments (e.g., axis for sum).
+        """
+        ctx = cls()
+        ctx.inputs = inputs
+        
+        input_data = [t.data for t in inputs]
+        raw_output = ctx.forward(*input_data, **kwargs)
+        # Subclasses should call save_for_backward explicitly if needed
+
+        requires_grad = any(t.requires_grad for t in inputs)
+        output_tensor = Tensor(raw_output, requires_grad=requires_grad, _creator=ctx)
+        
+        return output_tensor
+
+    def backward(self, grad_output: np.ndarray) -> None:
+        """
+        Computes gradients for inputs and accumulates them.
+        """
+        input_grads = self.compute_input_grads(grad_output)
+        
+        if not isinstance(input_grads, tuple):
+            input_grads = (input_grads,)
+            
+        for tensor, grad in zip(self.inputs, input_grads):
+            if tensor.requires_grad and grad is not None:
+                if tensor.grad is None:
+                    tensor.grad = np.zeros_like(tensor.data)
+                
+                tensor.grad += self._unbroadcast_grad(tensor.shape, grad)
+
+    def _unbroadcast_grad(self, target_shape: tuple[int, ...], grad: np.ndarray) -> np.ndarray:
+        """
+        Helper to correctly sum gradients for broadcasted operations.
+        """
+        while grad.ndim > len(target_shape):
+            grad = grad.sum(axis=0)
+        
+        for i, dim in enumerate(target_shape):
+            if dim == 1:
+                grad = grad.sum(axis=i, keepdims=True)
+        
+        if grad.shape != target_shape:
+            grad = grad.reshape(target_shape)
+        return grad
+
+    def save_for_backward(self, *args: Any) -> None:
+        """(Optional) Save intermediate values needed for backprop."""
+        self.saved_tensors = args
+
+    @abstractmethod
+    def forward(self, *args: Any, **kwargs: Any) -> np.ndarray:
+        """(Subclass must implement) Performs the actual computation."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray | tuple[np.ndarray | None, ...]:
+        """(Subclass must implement) The raw gradient logic."""
+        raise NotImplementedError
+
+class Tensor:
+    """
+    A simple wrapper for np.ndarray that supports automatic differentiation.
+    """
+    
+    data: np.ndarray
+    requires_grad: bool
+    grad: np.ndarray | None
+    
+    _creator: Function | None
+    """The Function object (e.g., Add, Mul, etc.) that created this Tensor 
+    (or None if leaf tensor). """
+    
+    def __init__(
+        self, 
+        data: np.ndarray | Sequence[Any] | float | int, 
+        requires_grad: bool = False, 
+        _creator: Function | None = None
+    ) -> None:
+        self.data = np.asarray(data, dtype=np.float32)
+        self.requires_grad = requires_grad
+        
+        self.grad = None
+        self._creator = _creator
+
+    def backward(self, grad_output: np.ndarray | float | int | None = None) -> None:
+        if not self.requires_grad:
+            raise RuntimeError("Cannot call backward() on a tensor that does not require grad")
+
+        if self._creator is None:
+            return # Root tensor
+
+        # We set the gradient to 1 if it is a scalar and None otherwise
+        if grad_output is None:
+            if self.data.size != 1:
+                raise RuntimeError("grad_output must be specified for non-scalar Tensors")
+            self.grad = np.ones_like(self.data)
+        else:
+            self.grad = np.asarray(grad_output, dtype=np.float32)
+
+        # Build a topological sort of the graph
+        topo: list[Tensor] = []
+        visited: set[Tensor] = set()
+
+        # Helper function to build the topological sort
+        def build_topo(tensor: Tensor) -> None:
+            if tensor in visited:
+                return
+
+            # Mark as visited to avoid cycles
+            visited.add(tensor)
+
+            # Process inputs first (ensures topological order)
+            if tensor._creator:
+                for inp in tensor._creator.inputs:
+                    build_topo(inp)
+                topo.append(tensor)
+        
+        build_topo(self)
+
+        # Apply backward pass in reverse topological order
+        for tensor in reversed(topo):
+            if tensor._creator and tensor.grad is not None:
+                tensor._creator.backward(tensor.grad)
+
+    def zero_grad(self) -> None:
+        if self.grad is not None:
+            self.grad.fill(0.0)
+
+    def _as_tensor(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+        """Helper to convert NumPy arrays or scalars to Tensors."""
+        if not isinstance(other, Tensor):
+            return Tensor(other)
+        return other
+
+    # --- Overloaded Operators ---
+    def __add__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+        return Add.apply(self, self._as_tensor(other))
+    
+    def __mul__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+        return Mul.apply(self, self._as_tensor(other))
+    
+    def __matmul__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+        return MatMul.apply(self, self._as_tensor(other))
+    
+    def __neg__(self) -> Tensor:
+        return Neg.apply(self)
+    
+    def __sub__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+        return self + (-self._as_tensor(other))
+    
+    def __pow__(self, other: float | int) -> Tensor:
+        return Pow.apply(self, c=other) # Pass scalar as kwarg
+
+    # --- Standard Methods ---
+    def sum(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
+        return Sum.apply(self, axis=axis, keepdims=keepdims)
+    
+    def mean(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
+        return Mean.apply(self, axis=axis, keepdims=keepdims)
+    
+    def relu(self) -> Tensor:
+        return ReLU.apply(self)
+    
+    def log_softmax(self, axis: int = -1) -> Tensor:
+        return LogSoftmax.apply(self, axis=axis)
+
+    # --- Properties ---
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return self.data.shape
+    
+    @property
+    def dtype(self) -> np.dtype:
+        return self.data.dtype
+    
+    def __repr__(self) -> str:
+        return f"Tensor({self.data}, requires_grad={self.requires_grad})"
+
+class Add(Function):
+    @override
+    def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        return x + y
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return grad_output, grad_output
+
+class Mul(Function):
+    @override
+    def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        self.save_for_backward(x, y)
+        return x * y
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        x, y = self.saved_tensors
+        return grad_output * y, grad_output * x
+
+class Neg(Function):
+    @override
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        return -x
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        return -grad_output
+
+class Pow(Function):
+    c: float | int
+    
+    @override
+    def forward(self, x: np.ndarray, c: float | int) -> np.ndarray:
+        self.save_for_backward(x)
+        self.c = c
+        return x ** c
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        x, = self.saved_tensors
+        return grad_output * (self.c * (x ** (self.c - 1)))
+
+class MatMul(Function):
+    @override
+    def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        self.save_for_backward(x, y)
+        return x @ y
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        x, y = self.saved_tensors
+        grad_x = grad_output @ y.T
+        grad_y = x.T @ grad_output
+        return grad_x, grad_y
+
+class ReLU(Function):
+    mask: np.ndarray
+    
+    @override
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        self.mask = (x > 0)
+        return x * self.mask
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        return grad_output * self.mask
+
+class Sum(Function):
+    input_shape: tuple[int, ...]
+    axis: int | tuple[int, ...] | None
+    keepdims: bool
+    
+    @override
+    def forward(
+        self, 
+        x: np.ndarray, 
+        axis: int | tuple[int, ...] | None = None, 
+        keepdims: bool = False
+    ) -> np.ndarray:
+        self.input_shape = x.shape
+        self.axis = axis
+        self.keepdims = keepdims
+        return np.sum(x, axis=axis, keepdims=keepdims)
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        if not self.keepdims and self.axis is not None:
+            grad_output = np.expand_dims(grad_output, self.axis)
+        return np.broadcast_to(grad_output, self.input_shape)
+
+class Mean(Function):
+    input_shape: tuple[int, ...]
+    n: float
+    axis: int | tuple[int, ...] | None
+    keepdims: bool
+    
+    @override
+    def forward(
+        self, 
+        x: np.ndarray, 
+        axis: int | tuple[int, ...] | None = None, 
+        keepdims: bool = False
+    ) -> np.ndarray:
+        self.input_shape = x.shape
+        output_shape = np.mean(x, axis=axis, keepdims=keepdims).shape
+        self.n = np.prod(self.input_shape) / np.prod(output_shape)
+        self.axis = axis
+        self.keepdims = keepdims
+        return np.mean(x, axis=axis, keepdims=keepdims)
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        if not self.keepdims and self.axis is not None:
+            grad_output = np.expand_dims(grad_output, self.axis)
+        return np.broadcast_to(grad_output, self.input_shape) / self.n
+
+class LogSoftmax(Function):
+    axis: int
+    
+    @override
+    def forward(self, x: np.ndarray, axis: int = -1) -> np.ndarray:
+        self.axis = axis
+        max_x = x.max(axis=axis, keepdims=True)
+        exp_x = np.exp(x - max_x)
+        sum_exp_x = exp_x.sum(axis=axis, keepdims=True)
+        log_probs = (x - max_x) - np.log(sum_exp_x)
+        self.save_for_backward(log_probs)
+        return log_probs
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        log_probs, = self.saved_tensors
+        softmax_output = np.exp(log_probs)
+        grad_sum = np.sum(grad_output, axis=self.axis, keepdims=True)
+        return grad_output - (softmax_output * grad_sum)
+
+class NLLLoss(Function):
+    n_samples: int
+    n_classes: int
+    targets: np.ndarray
+    
+    @override
+    def forward(self, log_probs: np.ndarray, **kwargs: Any) -> np.ndarray:
+        targets = kwargs.get('targets')
+        if targets is None:
+            raise ValueError("targets must be provided")
+        self.targets = targets
+        n_samples, n_classes = log_probs.shape
+        self.n_samples, self.n_classes = n_samples, n_classes
+        correct_log_probs = log_probs[range(n_samples), targets]
+        return -correct_log_probs.mean()
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, None]:
+        grad_log_probs = np.zeros((self.n_samples, self.n_classes), dtype=np.float32)
+        grad_log_probs[range(self.n_samples), self.targets] = -1.0 / self.n_samples
+        return grad_log_probs * grad_output, None # No grad for targets
+</file>
+
+</files>
