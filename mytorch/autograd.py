@@ -88,8 +88,7 @@ class Tensor:
     data: np.ndarray
     requires_grad: bool
     grad: np.ndarray | None
-    grad_fn: Function | None
-    _ctx: Function | None
+    _creator: Function | None
     
     def __init__(
         self, 
@@ -101,14 +100,13 @@ class Tensor:
         self.requires_grad = requires_grad
         
         self.grad = None
-        self.grad_fn = _creator
-        self._ctx = _creator # The Function object that created this
+        self._creator = _creator # The Function object that created this
 
     def backward(self, grad_output: np.ndarray | float | int | None = None) -> None:
         if not self.requires_grad:
             raise RuntimeError("Cannot call backward() on a tensor that does not require grad")
 
-        if self.grad_fn is None:
+        if self._creator is None:
             return # Root tensor
 
         # We set the gradient to 1 if it is a scalar and None otherwise
@@ -125,8 +123,8 @@ class Tensor:
         def build_topo(v: Tensor) -> None:
             if v not in visited:
                 visited.add(v)
-                if v._ctx:
-                    for inp in v._ctx.inputs:
+                if v._creator:
+                    for inp in v._creator.inputs:
                         build_topo(inp)
                     topo.append(v)
         
@@ -134,8 +132,8 @@ class Tensor:
 
         # Apply backward pass in reverse topological order
         for v in reversed(topo):
-            if v._ctx and v.grad is not None:
-                v._ctx.backward(v.grad)
+            if v._creator and v.grad is not None:
+                v._creator.backward(v.grad)
 
     def zero_grad(self) -> None:
         if self.grad is not None:
