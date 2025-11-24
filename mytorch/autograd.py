@@ -130,7 +130,6 @@ class Tensor:
 
         # Helper function to build the topological sort
         def build_topo(tensor: Tensor) -> None:
-            # Skip if already processed
             if tensor in visited:
                 return
 
@@ -139,19 +138,16 @@ class Tensor:
 
             # Process inputs first (ensures topological order)
             if tensor._creator:
-                # tensor._creator.inputs are the input tensors that were used to create tensor
-                # (e.g., if tensor = a + b, then inputs = (a, b))
                 for inp in tensor._creator.inputs:
                     build_topo(inp)
-                # Append this node after all its inputs are processed
                 topo.append(tensor)
         
         build_topo(self)
 
         # Apply backward pass in reverse topological order
-        for v in reversed(topo):
-            if v._creator and v.grad is not None:
-                v._creator.backward(v.grad)
+        for tensor in reversed(topo):
+            if tensor._creator and tensor.grad is not None:
+                tensor._creator.backward(tensor.grad)
 
     def zero_grad(self) -> None:
         if self.grad is not None:
