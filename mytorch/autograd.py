@@ -111,6 +111,7 @@ class Tensor:
         if self.grad_fn is None:
             return # Root tensor
 
+        # We set the gradient to 1 if it is a scalar and None otherwise
         if grad_output is None:
             if self.data.size != 1:
                 raise RuntimeError("grad_output must be specified for non-scalar Tensors")
