@@ -14,7 +14,11 @@ class Function:
     """
     
     inputs: tuple[Tensor, ...]
+    """The input tensors that were used to create the output tensor
+    (e.g., if output = a + b, then inputs = (a, b)). """
+    
     saved_tensors: tuple[Any, ...]
+    """The tensors that were saved for backward pass (e.g., x, y for Mul). """
     
     @classmethod
     def apply(cls, *inputs: Tensor, **kwargs: Any) -> Tensor:
@@ -88,7 +92,10 @@ class Tensor:
     data: np.ndarray
     requires_grad: bool
     grad: np.ndarray | None
+    
     _creator: Function | None
+    """The Function object (e.g., Add, Mul, etc.) that created this Tensor 
+    (or None if leaf tensor). """
     
     def __init__(
         self, 
@@ -100,7 +107,7 @@ class Tensor:
         self.requires_grad = requires_grad
         
         self.grad = None
-        self._creator = _creator # The Function object that created this
+        self._creator = _creator
 
     def backward(self, grad_output: np.ndarray | float | int | None = None) -> None:
         if not self.requires_grad:
@@ -120,13 +127,24 @@ class Tensor:
         # Build a topological sort of the graph
         topo: list[Tensor] = []
         visited: set[Tensor] = set()
-        def build_topo(v: Tensor) -> None:
-            if v not in visited:
-                visited.add(v)
-                if v._creator:
-                    for inp in v._creator.inputs:
-                        build_topo(inp)
-                    topo.append(v)
+
+        # Helper function to build the topological sort
+        def build_topo(tensor: Tensor) -> None:
+            # Skip if already processed
+            if tensor in visited:
+                return
+
+            # Mark as visited to avoid cycles
+            visited.add(tensor)
+
+            # Process inputs first (ensures topological order)
+            if tensor._creator:
+                # tensor._creator.inputs are the input tensors that were used to create tensor
+                # (e.g., if tensor = a + b, then inputs = (a, b))
+                for inp in tensor._creator.inputs:
+                    build_topo(inp)
+                # Append this node after all its inputs are processed
+                topo.append(tensor)
         
         build_topo(self)
 
