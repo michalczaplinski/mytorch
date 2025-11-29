@@ -13,7 +13,7 @@ class Function:
     Handles the graph creation and provides forward/backward methods.
     """
     
-    inputs: tuple[Tensor, ...]
+    input_tensors: tuple[Tensor, ...]
     """The input tensors that were used to create the output tensor
     (e.g., if output = a + b, then inputs = (a, b)). """
     
@@ -28,7 +28,7 @@ class Function:
         'kwargs' are non-Tensor arguments (e.g., axis for sum).
         """
         ctx = cls()
-        ctx.inputs = inputs
+        ctx.input_tensors = inputs
         
         input_data = [t.data for t in inputs]
         raw_output = ctx.forward(*input_data, **kwargs)
@@ -48,7 +48,7 @@ class Function:
         if not isinstance(input_grads, tuple):
             input_grads = (input_grads,)
             
-        for tensor, grad in zip(self.inputs, input_grads):
+        for tensor, grad in zip(self.input_tensors, input_grads):
             if tensor.requires_grad and grad is not None:
                 if tensor.grad is None:
                     tensor.grad = np.zeros_like(tensor.data)
@@ -94,8 +94,8 @@ class Tensor:
     grad: np.ndarray | None
     
     _creator: Function | None
-    """The Function object (e.g., Add, Mul, etc.) that created this Tensor 
-    (or None if leaf tensor). """
+    """The Function object (e.g., Add, Mul, etc.) that created 
+    this Tensor in the forward pass (or None if leaf tensor). """
     
     def __init__(
         self, 
@@ -138,7 +138,7 @@ class Tensor:
 
             # Process inputs first (ensures topological order)
             if tensor._creator:
-                for inp in tensor._creator.inputs:
+                for inp in tensor._creator.input_tensors:
                     build_topo(inp)
                 topo.append(tensor)
         
