@@ -62,7 +62,8 @@ class Embedding(Module):
     
     def __init__(self, num_embeddings: int, embedding_dim: int) -> None:
         super().__init__()
-        self.weight = Tensor(np.random.normal(0, 0.01, (num_embeddings, embedding_dim)), requires_grad=True)
+        # Initialize from N(0, 1) to match PyTorch's nn.Embedding default
+        self.weight = Tensor(np.random.normal(0, 1.0, (num_embeddings, embedding_dim)), requires_grad=True)
         
     def forward(self, x: Tensor) -> Tensor:
         return self.weight[x.data]
