@@ -56,6 +56,17 @@ class Linear(Module):
     def forward(self, x: Tensor) -> Tensor:
         return (x @ self.weight) + self.bias
 
+class Embedding(Module):
+    """A simple embedding layer."""
+    weight: Tensor
+    
+    def __init__(self, num_embeddings: int, embedding_dim: int) -> None:
+        super().__init__()
+        self.weight = Tensor(np.random.normal(0, 0.01, (num_embeddings, embedding_dim)), requires_grad=True)
+        
+    def forward(self, x: Tensor) -> Tensor:
+        return self.weight[x.data]
+
 class ReLU(Module):
     """A simple stateless ReLU activation module."""
     def forward(self, x: Tensor) -> Tensor:

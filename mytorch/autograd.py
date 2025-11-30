@@ -17,7 +17,7 @@ class Function:
     """The input tensors that were used to create the output tensor
     (e.g., if output = a + b, then inputs = (a, b)). """
     
-    saved_tensors: tuple[Any, ...]
+    saved_tensors: tuple[np.ndarray, ...]
     """The tensors that were saved for backward pass (e.g., x, y for Mul). """
     
     @classmethod
@@ -191,6 +191,9 @@ class Tensor:
     def log_softmax(self, axis: int = -1) -> Tensor:
         return LogSoftmax.apply(self, axis=axis)
 
+    def __getitem__(self, indices: np.ndarray | Sequence[int] | int) -> Tensor:
+        return Indexing.apply(self, indices=indices)
+
     # --- Properties ---
     @property
     def shape(self) -> tuple[int, ...]:
@@ -339,6 +342,23 @@ class LogSoftmax(Function):
         softmax_output = np.exp(log_probs)
         grad_sum = np.sum(grad_output, axis=self.axis, keepdims=True)
         return grad_output - (softmax_output * grad_sum)
+
+class Indexing(Function):
+    """Indexing operation for embedding lookups (weight[indices])."""
+    input_shape: tuple[int, ...]
+    indices: np.ndarray[Any, np.dtype[np.intp]]
+    
+    @override
+    def forward(self, x: np.ndarray, indices: np.ndarray) -> np.ndarray:
+        self.input_shape = x.shape
+        self.indices = np.asarray(indices, dtype=np.intp)  # Ensure integer type for indexing
+        return x[self.indices]
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        grad_x = np.zeros(self.input_shape, dtype=np.float32)
+        np.add.at(grad_x, self.indices, grad_output)
+        return grad_x
 
 class NLLLoss(Function):
     n_samples: int
