@@ -194,6 +194,12 @@ class Tensor:
     def __getitem__(self, indices: np.ndarray | Sequence[int] | int) -> Tensor:
         return Indexing.apply(self, indices=indices)
 
+    def reshape(self, *shape: int) -> Tensor:
+        return Reshape.apply(self, new_shape=shape)
+    
+    def transpose(self, *axes: int) -> Tensor:
+        return Transpose.apply(self, axes=axes)
+
     # --- Properties ---
     @property
     def shape(self) -> tuple[int, ...]:
@@ -381,3 +387,29 @@ class NLLLoss(Function):
         grad_log_probs = np.zeros((self.n_samples, self.n_classes), dtype=np.float32)
         grad_log_probs[range(self.n_samples), self.targets] = -1.0 / self.n_samples
         return grad_log_probs * grad_output, None # No grad for targets
+
+class Reshape(Function):
+    input_shape: tuple[int, ...]
+    new_shape: tuple[int, ...]
+    
+    @override
+    def forward(self, x: np.ndarray, new_shape: tuple[int, ...]) -> np.ndarray:
+        self.input_shape = x.shape
+        self.new_shape = new_shape
+        return x.reshape(new_shape)
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        return grad_output.reshape(self.input_shape)
+
+class Transpose(Function):
+    axes: tuple[int, ...]
+
+    @override
+    def forward(self, x: np.ndarray, axes: tuple[int, ...]) -> np.ndarray:
+        self.axes = axes
+        return x.transpose(axes)
+
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        return grad_output.transpose(self.axes)
