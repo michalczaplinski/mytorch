@@ -101,8 +101,10 @@ class LayerNorm(Module):
 
     def forward(self, x: Tensor) -> Tensor:
         # Always normalize over the last axis (standard LayerNorm behavior)
+        # TODO: optimize this. Instead of using mean and var, use a single pass to compute the mean and variance.
         mean = x.mean(axis=-1, keepdims=True)
         variance = x.var(axis=-1, keepdims=True)
+        # TODO: optimize this
         return (x - mean) / (variance + self.eps) ** 0.5 * self.weight + self.bias
 
 
