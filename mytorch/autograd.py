@@ -352,19 +352,34 @@ class Var(Function):
     input_shape: tuple[int, ...]
     axis: int | tuple[int, ...] | None
     keepdims: bool
+    n: float
     
     @override
     def forward(self, x: np.ndarray, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> np.ndarray:
         self.input_shape = x.shape
         self.axis = axis
         self.keepdims = keepdims
+        
+        # Compute n (number of elements being reduced)
+        if axis is None:
+            self.n = float(x.size)
+        else:
+            axes = (axis,) if isinstance(axis, int) else axis
+            self.n = float(np.prod([x.shape[ax] for ax in axes]))
+        
+        mean = np.mean(x, axis=axis, keepdims=True)
+        self.save_for_backward(x, mean)
         return np.var(x, axis=axis, keepdims=keepdims)
     
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        x, mean = self.saved_tensors
+        
         if not self.keepdims and self.axis is not None:
             grad_output = np.expand_dims(grad_output, self.axis)
-        return np.broadcast_to(grad_output, self.input_shape)
+        
+        # d_var/d_x_i = (2/n) * (x_i - mean)
+        return grad_output * (2.0 / self.n) * (x - mean)
 
 class LogSoftmax(Function):
     axis: int
