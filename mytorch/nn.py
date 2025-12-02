@@ -84,6 +84,28 @@ class LogSoftmax(Module):
     def forward(self, x: Tensor) -> Tensor:
         return x.log_softmax(axis=self.axis)
 
+
+class LayerNorm(Module):
+    """A simple layer normalization module."""
+    normalized_shape: int
+    eps: float
+    weight: Tensor
+    bias: Tensor
+    
+    def __init__(self, normalized_shape: int, eps: float = 1e-5) -> None:
+        super().__init__()
+        self.normalized_shape = normalized_shape
+        self.eps = eps
+        self.weight = Tensor(np.ones(normalized_shape), requires_grad=True)
+        self.bias = Tensor(np.zeros(normalized_shape), requires_grad=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # Always normalize over the last axis (standard LayerNorm behavior)
+        mean = x.mean(axis=-1, keepdims=True)
+        variance = x.var(axis=-1, keepdims=True)
+        return (x - mean) / (variance + self.eps) ** 0.5 * self.weight + self.bias
+
+
 # --- Loss Function ---
 
 def nll_loss(log_probs: Tensor, targets: np.ndarray) -> Tensor:
