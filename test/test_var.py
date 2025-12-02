@@ -124,34 +124,3 @@ def test_var_zero_variance():
     expected = np.zeros(2, dtype=np.float32)
     assert np.allclose(out.data, expected), f"Var of constant should be 0: {out.data}"
 
-
-if __name__ == "__main__":
-    test_var_forward_full()
-    print("✓ test_var_forward_full passed")
-    
-    test_var_forward_axis0()
-    print("✓ test_var_forward_axis0 passed")
-    
-    test_var_forward_axis1()
-    print("✓ test_var_forward_axis1 passed")
-    
-    test_var_forward_axis_negative()
-    print("✓ test_var_forward_axis_negative passed")
-    
-    test_var_forward_keepdims()
-    print("✓ test_var_forward_keepdims passed")
-    
-    test_var_backward_exists()
-    print("✓ test_var_backward_exists passed")
-    
-    test_var_backward_axis()
-    print("✓ test_var_backward_axis passed")
-    
-    test_var_backward_numerical()
-    print("✓ test_var_backward_numerical passed")
-    
-    test_var_zero_variance()
-    print("✓ test_var_zero_variance passed")
-    
-    print("\nAll var() tests passed!")
-

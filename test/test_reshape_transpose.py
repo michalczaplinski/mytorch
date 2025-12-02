@@ -88,28 +88,3 @@ def test_transpose_backward_gradient_flow():
     assert x.grad is not None, "Gradient is None"
     assert np.allclose(x.grad, expected_grad), f"Gradient mismatch: {x.grad}"
 
-
-if __name__ == "__main__":
-    test_reshape_forward()
-    print("✓ test_reshape_forward passed")
-    
-    test_reshape_backward()
-    print("✓ test_reshape_backward passed")
-    
-    test_reshape_preserves_data_order()
-    print("✓ test_reshape_preserves_data_order passed")
-    
-    test_transpose_forward()
-    print("✓ test_transpose_forward passed")
-    
-    test_transpose_backward()
-    print("✓ test_transpose_backward passed")
-    
-    test_transpose_2d_swap()
-    print("✓ test_transpose_2d_swap passed")
-    
-    test_transpose_backward_gradient_flow()
-    print("✓ test_transpose_backward_gradient_flow passed")
-    
-    print("\nAll reshape/transpose tests passed!")
-

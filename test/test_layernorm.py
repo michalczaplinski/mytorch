@@ -114,28 +114,3 @@ def test_layernorm_eps_prevents_division_by_zero():
     assert not np.any(np.isnan(out.data)), "Output contains NaN"
     assert not np.any(np.isinf(out.data)), "Output contains Inf"
 
-
-if __name__ == "__main__":
-    test_layernorm_forward_shape()
-    print("✓ test_layernorm_forward_shape passed")
-    
-    test_layernorm_normalizes_output()
-    print("✓ test_layernorm_normalizes_output passed")
-    
-    test_layernorm_weight_and_bias()
-    print("✓ test_layernorm_weight_and_bias passed")
-    
-    test_layernorm_backward()
-    print("✓ test_layernorm_backward passed")
-    
-    test_layernorm_matches_numpy()
-    print("✓ test_layernorm_matches_numpy passed")
-    
-    test_layernorm_3d_input()
-    print("✓ test_layernorm_3d_input passed")
-    
-    test_layernorm_eps_prevents_division_by_zero()
-    print("✓ test_layernorm_eps_prevents_division_by_zero passed")
-    
-    print("\nAll LayerNorm tests passed!")
-

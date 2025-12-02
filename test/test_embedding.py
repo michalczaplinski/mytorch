@@ -44,16 +44,3 @@ def test_embedding_repeated_indices():
     assert emb.weight.grad is not None, "Gradient is None"
     assert np.allclose(emb.weight.grad, expected_grad), f"Repeated index gradient mismatch: {emb.weight.grad}"
 
-
-if __name__ == "__main__":
-    test_embedding_forward()
-    print("✓ test_embedding_forward passed")
-    
-    test_embedding_backward()
-    print("✓ test_embedding_backward passed")
-    
-    test_embedding_repeated_indices()
-    print("✓ test_embedding_repeated_indices passed")
-    
-    print("\nAll embedding tests passed!")
-
