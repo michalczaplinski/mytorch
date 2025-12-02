@@ -188,6 +188,9 @@ class Tensor:
     def mean(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
         return Mean.apply(self, axis=axis, keepdims=keepdims)
     
+    def var(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
+        return Var.apply(self, axis=axis, keepdims=keepdims)
+    
     def relu(self) -> Tensor:
         return ReLU.apply(self)
     
@@ -344,6 +347,24 @@ class Mean(Function):
         if not self.keepdims and self.axis is not None:
             grad_output = np.expand_dims(grad_output, self.axis)
         return np.broadcast_to(grad_output, self.input_shape) / self.n
+
+class Var(Function):
+    input_shape: tuple[int, ...]
+    axis: int | tuple[int, ...] | None
+    keepdims: bool
+    
+    @override
+    def forward(self, x: np.ndarray, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> np.ndarray:
+        self.input_shape = x.shape
+        self.axis = axis
+        self.keepdims = keepdims
+        return np.var(x, axis=axis, keepdims=keepdims)
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        if not self.keepdims and self.axis is not None:
+            grad_output = np.expand_dims(grad_output, self.axis)
+        return np.broadcast_to(grad_output, self.input_shape)
 
 class LogSoftmax(Function):
     axis: int
