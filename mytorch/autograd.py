@@ -177,6 +177,9 @@ class Tensor:
     
     def __pow__(self, other: float | int) -> Tensor:
         return Pow.apply(self, c=other) # Pass scalar as kwarg
+    
+    def __truediv__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+        return Div.apply(self, self._as_tensor(other))
 
     # --- Standard Methods ---
     def sum(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
@@ -231,6 +234,19 @@ class Mul(Function):
     def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         x, y = self.saved_tensors
         return grad_output * y, grad_output * x
+
+class Div(Function):
+    @override
+    def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        self.save_for_backward(x, y)
+        return x / y
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        x, y = self.saved_tensors
+        grad_x = grad_output / y           # ∂(x/y)/∂x = 1/y
+        grad_y = -grad_output * x / (y * y)  # ∂(x/y)/∂y = -x/y²
+        return grad_x, grad_y
 
 class Neg(Function):
     @override
