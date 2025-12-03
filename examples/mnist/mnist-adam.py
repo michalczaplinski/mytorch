@@ -13,7 +13,7 @@ from utils import fetch_mnist
 # Import our framework components
 from mytorch.autograd import Tensor
 from mytorch.nn import Module, Linear, ReLU, LogSoftmax, nll_loss
-from mytorch.optim import SGD
+from mytorch.optim import Adam
 
 # --- 1. Model Definition ---
 
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     NUM_CLASSES = 10
     LR = 0.001
     BATCH_SIZE = 64
-    EPOCHS = 50
+    EPOCHS = 18
     
     DATA_DIR = "./examples/mnist/data/"
     
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     
     # --- Initialize Model and Optimizer ---
     model = SimpleMLP(INPUT_SIZE, HIDDEN_SIZE, NUM_CLASSES)
-    optimizer = SGD(model.parameters(), lr=LR)
+    optimizer = Adam(model.parameters(), lr=LR)
     
     # --- Training Loop ---
     print("Starting training...")
