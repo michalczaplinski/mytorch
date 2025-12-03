@@ -40,6 +40,8 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+.cursor/
+  rules.mdc
 examples/
   mnist/
     data/
@@ -47,12 +49,20 @@ examples/
       t10k-labels.idx1-ubyte
       train-images.idx3-ubyte
       train-labels.idx1-ubyte
+    mnist-adam.py
     mnist.py
+    utils.py
 mytorch/
   __init__.py
   autograd.py
   nn.py
   optim.py
+test/
+  test_embedding.py
+  test_layernorm.py
+  test_reshape_transpose.py
+  test_transpose_backward.py
+  test_var.py
 .gitignore
 .python-version
 main.py
@@ -63,74 +73,187 @@ README.md
 <files>
 This section contains the contents of the repository's files.
 
-<file path=".gitignore">
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+<file path="test/test_transpose_backward.py">
+"""Test for Transpose backward pass correctness."""
+import numpy as np
+import sys
+sys.path.insert(0, '/Users/czapla/Projects/mytorch')
 
-# Virtual environments
-.venv
-</file>
+from mytorch.autograd import Tensor
 
-<file path=".python-version">
-3.13
-</file>
+def test_transpose_backward_2d_swap():
+    """Test 2D transpose (swap axes) - this should work even with the bug."""
+    np.random.seed(42)
+    x_data = np.random.randn(3, 4).astype(np.float32)
+    x = Tensor(x_data, requires_grad=True)
+    
+    # Forward: (3, 4) -> (4, 3) with axes (1, 0)
+    y = x.transpose(1, 0)
+    assert y.shape == (4, 3), f"Expected shape (4, 3), got {y.shape}"
+    
+    # Backward with gradient of ones
+    y.backward(np.ones_like(y.data))
+    
+    # Gradient should have same shape as x
+    assert x.grad.shape == x.shape, f"Gradient shape {x.grad.shape} doesn't match input shape {x.shape}"
+    
+    # For a simple sum loss, gradient should be all ones
+    expected_grad = np.ones_like(x_data)
+    np.testing.assert_allclose(x.grad, expected_grad, rtol=1e-5)
+    print("✓ 2D swap transpose backward PASSED")
 
-<file path="main.py">
-def main():
-    print("Hello from mytorch!")
+
+def test_transpose_backward_3d_rotation():
+    """Test 3D transpose with rotation (2, 0, 1) - this reveals the bug."""
+    np.random.seed(42)
+    x_data = np.random.randn(2, 3, 4).astype(np.float32)  # shape (2, 3, 4)
+    x = Tensor(x_data, requires_grad=True)
+    
+    # Forward: (2, 3, 4) -> (4, 2, 3) with axes (2, 0, 1)
+    # axes (2, 0, 1) means: new_dim_0 = old_dim_2, new_dim_1 = old_dim_0, new_dim_2 = old_dim_1
+    y = x.transpose(2, 0, 1)
+    assert y.shape == (4, 2, 3), f"Expected shape (4, 2, 3), got {y.shape}"
+    
+    # Backward with gradient of ones
+    y.backward(np.ones_like(y.data))
+    
+    # Gradient should have same shape as x
+    assert x.grad.shape == x.shape, f"Gradient shape {x.grad.shape} doesn't match input shape {x.shape}"
+    
+    # For a simple sum loss, gradient should be all ones
+    expected_grad = np.ones_like(x_data)
+    np.testing.assert_allclose(x.grad, expected_grad, rtol=1e-5)
+    print("✓ 3D rotation transpose backward PASSED")
+
+
+def test_transpose_backward_numerical_gradient():
+    """Numerical gradient check for transpose with non-trivial permutation."""
+    np.random.seed(42)
+    x_data = np.random.randn(2, 3, 4).astype(np.float64)  # Use float64 for better precision
+    axes = (2, 0, 1)
+    eps = 1e-5
+    
+    # Compute analytical gradient
+    x = Tensor(x_data.copy(), requires_grad=True)
+    y = x.transpose(*axes)
+    # Use sum as loss function
+    loss = y.sum()
+    loss.backward()
+    analytical_grad = x.grad.copy()
+    
+    # Compute numerical gradient
+    numerical_grad = np.zeros_like(x_data)
+    for idx in np.ndindex(x_data.shape):
+        x_plus = x_data.copy()
+        x_plus[idx] += eps
+        loss_plus = np.sum(x_plus.transpose(axes))
+        
+        x_minus = x_data.copy()
+        x_minus[idx] -= eps
+        loss_minus = np.sum(x_minus.transpose(axes))
+        
+        numerical_grad[idx] = (loss_plus - loss_minus) / (2 * eps)
+    
+    np.testing.assert_allclose(analytical_grad, numerical_grad, rtol=1e-4, atol=1e-4)
+    print("✓ Numerical gradient check PASSED")
+
+
+def test_transpose_backward_with_weighted_loss():
+    """Test with a non-uniform gradient to catch subtle bugs."""
+    np.random.seed(42)
+    x_data = np.random.randn(2, 3, 4).astype(np.float64)  # Use float64 for better precision
+    grad_out = np.random.randn(4, 2, 3).astype(np.float64)  # Random upstream gradient
+    axes = (2, 0, 1)
+    eps = 1e-5
+    
+    # Compute analytical gradient
+    x = Tensor(x_data.copy(), requires_grad=True)
+    y = x.transpose(*axes)
+    y.backward(grad_out)
+    analytical_grad = x.grad.copy()
+    
+    # Compute numerical gradient
+    # Loss = sum(grad_out * y) = sum(grad_out * x.transpose(axes))
+    numerical_grad = np.zeros_like(x_data)
+    for idx in np.ndindex(x_data.shape):
+        x_plus = x_data.copy()
+        x_plus[idx] += eps
+        loss_plus = np.sum(grad_out * x_plus.transpose(axes))
+        
+        x_minus = x_data.copy()
+        x_minus[idx] -= eps
+        loss_minus = np.sum(grad_out * x_minus.transpose(axes))
+        
+        numerical_grad[idx] = (loss_plus - loss_minus) / (2 * eps)
+    
+    np.testing.assert_allclose(analytical_grad, numerical_grad, rtol=1e-4, atol=1e-4)
+    print("✓ Weighted loss numerical gradient check PASSED")
 
 
 if __name__ == "__main__":
-    main()
+    print("Testing Transpose backward pass...\n")
+    
+    try:
+        test_transpose_backward_2d_swap()
+    except AssertionError as e:
+        print(f"✗ 2D swap transpose backward FAILED: {e}")
+    
+    try:
+        test_transpose_backward_3d_rotation()
+    except AssertionError as e:
+        print(f"✗ 3D rotation transpose backward FAILED: {e}")
+    
+    try:
+        test_transpose_backward_numerical_gradient()
+    except AssertionError as e:
+        print(f"✗ Numerical gradient check FAILED: {e}")
+    
+    try:
+        test_transpose_backward_with_weighted_loss()
+    except AssertionError as e:
+        print(f"✗ Weighted loss numerical gradient check FAILED: {e}")
 </file>
 
-<file path="pyproject.toml">
-[project]
-name = "mytorch"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "numpy>=2.3.4",
-]
+<file path=".cursor/rules.mdc">
+---
+alwaysApply: true
+---
+
+# Cursor Rules for mytorch
+
+## Package Management
+
+- Use `uv` for all package and project management
+- Dependencies are managed in `pyproject.toml`
+
+## Testing
+
+- Tests are located in the `/test` folder
+- Run all tests with `uv run pytest`
+- Test files should follow the naming convention `test_*.py`
+
+## Type Annotations
+
+- **ALL code MUST use complete type hints**
 </file>
 
-<file path="README.md">
-### Installation
-
-```bash
-uv sync
-```
-
-### Running the MNIST example
-
-```bash
-uv run examples/mnist/mnist.py
-```
-</file>
-
-<file path="examples/mnist/mnist.py">
+<file path="examples/mnist/mnist-adam.py">
 # train_mnist.py
 
 import numpy as np
-import struct
 import sys
-from pathlib import Path
 
 import os
 # Ensure project root is on sys.path when running this script directly
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+# Import utils
+from utils import fetch_mnist
+
 # Import our framework components
 from mytorch.autograd import Tensor
 from mytorch.nn import Module, Linear, ReLU, LogSoftmax, nll_loss
-from mytorch.optim import SGD
+from mytorch.optim import Adam
 
 # --- 1. Model Definition ---
 
@@ -149,7 +272,91 @@ class SimpleMLP(Module):
         x = self.log_softmax(x)
         return x
 
-# --- 2. Data Loading (NumPy-only) ---
+
+# --- 3. Main Training Script ---
+
+if __name__ == "__main__":
+    
+    # --- Config ---
+    INPUT_SIZE = 784  # 28x28
+    HIDDEN_SIZE = 64
+    NUM_CLASSES = 10
+    LR = 0.001
+    BATCH_SIZE = 64
+    EPOCHS = 18
+    
+    DATA_DIR = "./examples/mnist/data/"
+    
+    # --- Load Data ---
+    print(f"Loading MNIST data from {DATA_DIR}...")
+    try:
+        X_train, y_train, X_test, y_test = fetch_mnist(DATA_DIR)
+        print(f"Data loaded: {X_train.shape[0]} train, {X_test.shape[0]} test samples.")
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}")
+        print("Could not load MNIST data.")
+        sys.exit(1)
+    
+    # --- Initialize Model and Optimizer ---
+    model = SimpleMLP(INPUT_SIZE, HIDDEN_SIZE, NUM_CLASSES)
+    optimizer = Adam(model.parameters(), lr=LR)
+    
+    # --- Training Loop ---
+    print("Starting training...")
+    for epoch in range(EPOCHS):
+        num_batches = X_train.shape[0] // BATCH_SIZE
+        total_loss = 0.0
+        
+        # Shuffle data
+        perm = np.random.permutation(X_train.shape[0])
+        
+        for i in range(num_batches):
+            # Get batch
+            start = i * BATCH_SIZE
+            end = start + BATCH_SIZE
+            idx = perm[start:end]
+            
+            X_batch = Tensor(X_train[idx])
+            y_batch_targets = y_train[idx] # Targets are just numpy arrays
+
+            # 1. Zero gradients
+            optimizer.zero_grad()
+            
+            # 2. Forward pass
+            predictions = model(X_batch)
+            
+            # 3. Compute loss
+            loss = nll_loss(predictions, y_batch_targets)
+            total_loss += loss.data.item()
+            
+            # 4. Backward pass
+            loss.backward()
+            
+            # 5. Update weights
+            optimizer.step()
+        
+        avg_loss = total_loss / num_batches
+        print(f"Epoch {epoch+1}/{EPOCHS}, Average Loss: {avg_loss:.4f}")
+
+    # --- Evaluation ---
+    print("Training complete. Evaluating on test set...")
+    
+    # No need for gradients during evaluation
+    test_preds_tensor = model(Tensor(X_test, requires_grad=False))
+    
+    # Get class predictions (argmax of log_probs)
+    pred_labels = np.argmax(test_preds_tensor.data, axis=1)
+    
+    # Compute accuracy as the mean of correct predictions
+    correct_predictions = (pred_labels == y_test).astype(np.float32)
+    accuracy: float = correct_predictions.mean().item()
+    print(f"Test Accuracy: {accuracy * 100:.2f}%")
+</file>
+
+<file path="examples/mnist/utils.py">
+import numpy as np
+import struct
+from pathlib import Path
 
 def fetch_mnist(data_path: str = ".") -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -186,6 +393,490 @@ def fetch_mnist(data_path: str = ".") -> tuple[np.ndarray, np.ndarray, np.ndarra
     # Normalize and convert types
     return (X_train.astype(np.float32) / 255.0, y_train.astype(np.int64),
             X_test.astype(np.float32) / 255.0, y_test.astype(np.int64))
+</file>
+
+<file path=".gitignore">
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+</file>
+
+<file path=".python-version">
+3.13
+</file>
+
+<file path="main.py">
+def main():
+    print("Hello from mytorch!")
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="test/test_embedding.py">
+import numpy as np
+from mytorch.autograd import Tensor
+from mytorch.nn import Embedding
+
+
+def test_embedding_forward():
+    """Test that forward pass correctly indexes into the weight matrix."""
+    emb = Embedding(num_embeddings=5, embedding_dim=3)
+    indices = Tensor(np.array([0, 2, 1]))
+    
+    out = emb(indices)
+    
+    expected = emb.weight.data[[0, 2, 1]]
+    assert np.allclose(out.data, expected), f"Forward mismatch: {out.data} vs {expected}"
+
+
+def test_embedding_backward():
+    """Test that gradients accumulate at the correct indices."""
+    emb = Embedding(num_embeddings=5, embedding_dim=3)
+    indices = Tensor(np.array([0, 2, 1]))
+    
+    out = emb(indices)
+    loss = out.sum()
+    loss.backward()
+    
+    expected_grad = np.zeros((5, 3), dtype=np.float32)
+    expected_grad[[0, 2, 1]] = 1.0
+    assert emb.weight.grad is not None, "Gradient is None"
+    assert np.allclose(emb.weight.grad, expected_grad), f"Gradient mismatch: {emb.weight.grad}"
+
+
+def test_embedding_repeated_indices():
+    """Test that repeated indices correctly accumulate gradients."""
+    emb = Embedding(num_embeddings=4, embedding_dim=2)
+    indices = Tensor(np.array([1, 1, 1, 0]))  # Index 1 appears 3 times
+    
+    out = emb(indices)
+    loss = out.sum()
+    loss.backward()
+    
+    expected_grad = np.zeros((4, 2), dtype=np.float32)
+    expected_grad[0] = 1.0  # Index 0 appears once
+    expected_grad[1] = 3.0  # Index 1 appears 3 times
+    assert emb.weight.grad is not None, "Gradient is None"
+    assert np.allclose(emb.weight.grad, expected_grad), f"Repeated index gradient mismatch: {emb.weight.grad}"
+</file>
+
+<file path="test/test_layernorm.py">
+import numpy as np
+from mytorch.autograd import Tensor
+from mytorch.nn import LayerNorm
+
+
+def test_layernorm_forward_shape():
+    """Test that LayerNorm preserves input shape."""
+    ln = LayerNorm(normalized_shape=4)  # Normalize over last dimension of size 4
+    x = Tensor(np.random.randn(2, 3, 4).astype(np.float32))
+    
+    out = ln(x)
+    
+    assert out.shape == x.shape, f"Shape mismatch: {out.shape} vs {x.shape}"
+
+
+def test_layernorm_normalizes_output():
+    """Test that LayerNorm output has mean ≈ 0 and std ≈ 1 along normalized axis."""
+    ln = LayerNorm(normalized_shape=8)
+    # Use a tensor with known non-zero mean and non-unit variance
+    x = Tensor(np.random.randn(4, 8).astype(np.float32) * 5 + 10)
+    
+    out = ln(x)
+    
+    # Check mean is approximately 0 along last axis
+    out_mean = out.data.mean(axis=-1)
+    assert np.allclose(out_mean, 0, atol=1e-5), f"Mean not zero: {out_mean}"
+    
+    # Check std is approximately 1 along last axis
+    out_std = out.data.std(axis=-1)
+    assert np.allclose(out_std, 1, atol=1e-5), f"Std not one: {out_std}"
+
+
+def test_layernorm_weight_and_bias():
+    """Test that weight (gamma) and bias (beta) are applied correctly."""
+    ln = LayerNorm(normalized_shape=4)
+    # Set custom weight and bias
+    ln.weight = Tensor(np.array([2.0, 2.0, 2.0, 2.0], dtype=np.float32), requires_grad=True)
+    ln.bias = Tensor(np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32), requires_grad=True)
+    
+    x = Tensor(np.random.randn(2, 4).astype(np.float32) * 3 + 5)
+    out = ln(x)
+    
+    # After normalization (mean=0, std=1), scaling by 2 and shifting by 1
+    # should give mean ≈ 1 and std ≈ 2
+    out_mean = out.data.mean(axis=-1)
+    out_std = out.data.std(axis=-1)
+    
+    assert np.allclose(out_mean, 1, atol=1e-5), f"Mean not 1: {out_mean}"
+    assert np.allclose(out_std, 2, atol=1e-5), f"Std not 2: {out_std}"
+
+
+def test_layernorm_backward():
+    """Test that gradients flow through LayerNorm."""
+    ln = LayerNorm(normalized_shape=4)
+    x = Tensor(np.random.randn(2, 4).astype(np.float32), requires_grad=True)
+    
+    out = ln(x)
+    loss = out.sum()
+    loss.backward()
+    
+    # Check gradients exist
+    assert x.grad is not None, "Input gradient is None"
+    assert ln.weight.grad is not None, "Weight gradient is None"
+    assert ln.bias.grad is not None, "Bias gradient is None"
+    
+    # Check gradient shapes
+    assert x.grad.shape == x.shape, f"Input gradient shape mismatch: {x.grad.shape}"
+    assert ln.weight.grad.shape == ln.weight.shape, f"Weight gradient shape mismatch"
+    assert ln.bias.grad.shape == ln.bias.shape, f"Bias gradient shape mismatch"
+
+
+def test_layernorm_matches_numpy():
+    """Test LayerNorm output matches manual numpy computation."""
+    np.random.seed(42)
+    ln = LayerNorm(normalized_shape=4, eps=1e-5)
+    x_data = np.random.randn(3, 4).astype(np.float32)
+    x = Tensor(x_data)
+    
+    out = ln(x)
+    
+    # Manual computation
+    mean = x_data.mean(axis=-1, keepdims=True)
+    var = x_data.var(axis=-1, keepdims=True)
+    expected = (x_data - mean) / np.sqrt(var + 1e-5)
+    # weight=1, bias=0 by default
+    
+    assert np.allclose(out.data, expected, atol=1e-5), f"Output mismatch:\n{out.data}\nvs\n{expected}"
+
+
+def test_layernorm_3d_input():
+    """Test LayerNorm works with 3D input (batch, seq, features)."""
+    ln = LayerNorm(normalized_shape=8)
+    x = Tensor(np.random.randn(2, 5, 8).astype(np.float32) * 2 + 3, requires_grad=True)
+    
+    out = ln(x)
+    
+    # Check normalization along last axis
+    out_mean = out.data.mean(axis=-1)
+    out_std = out.data.std(axis=-1)
+    
+    assert np.allclose(out_mean, 0, atol=1e-5), f"Mean not zero for 3D input"
+    assert np.allclose(out_std, 1, atol=1e-5), f"Std not one for 3D input"
+
+
+def test_layernorm_eps_prevents_division_by_zero():
+    """Test that eps prevents division by zero for constant input."""
+    ln = LayerNorm(normalized_shape=4, eps=1e-5)
+    # Constant input has zero variance
+    x = Tensor(np.ones((2, 4), dtype=np.float32) * 5)
+    
+    out = ln(x)
+    
+    # Should not have NaN or Inf
+    assert not np.any(np.isnan(out.data)), "Output contains NaN"
+    assert not np.any(np.isinf(out.data)), "Output contains Inf"
+</file>
+
+<file path="test/test_reshape_transpose.py">
+import numpy as np
+from mytorch.autograd import Tensor
+
+
+def test_reshape_forward():
+    """Test that reshape correctly changes tensor shape."""
+    x = Tensor(np.arange(12).reshape(3, 4), requires_grad=True)
+    
+    out = x.reshape(4, 3)
+    
+    assert out.shape == (4, 3), f"Shape mismatch: {out.shape}"
+    assert np.allclose(out.data, x.data.reshape(4, 3)), "Data mismatch after reshape"
+
+
+def test_reshape_backward():
+    """Test that gradients are correctly reshaped back to original shape."""
+    x = Tensor(np.arange(12, dtype=np.float32).reshape(3, 4), requires_grad=True)
+    
+    out = x.reshape(4, 3)
+    loss = out.sum()
+    loss.backward()
+    
+    assert x.grad is not None, "Gradient is None"
+    assert x.grad.shape == (3, 4), f"Gradient shape mismatch: {x.grad.shape}"
+    assert np.allclose(x.grad, np.ones((3, 4))), "Gradient values incorrect"
+
+
+def test_reshape_preserves_data_order():
+    """Test that reshape preserves element order (row-major/C order)."""
+    data = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+    x = Tensor(data, requires_grad=True)
+    
+    out = x.reshape(6)
+    
+    expected = np.array([1, 2, 3, 4, 5, 6], dtype=np.float32)
+    assert np.allclose(out.data, expected), f"Data order mismatch: {out.data}"
+
+
+def test_transpose_forward():
+    """Test that transpose correctly reorders axes."""
+    x = Tensor(np.arange(24).reshape(2, 3, 4), requires_grad=True)
+    
+    out = x.transpose(2, 0, 1)  # (2,3,4) -> (4,2,3)
+    
+    assert out.shape == (4, 2, 3), f"Shape mismatch: {out.shape}"
+    assert np.allclose(out.data, x.data.transpose(2, 0, 1)), "Data mismatch after transpose"
+
+
+def test_transpose_backward():
+    """Test that gradients are correctly transposed back."""
+    x = Tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4), requires_grad=True)
+    
+    out = x.transpose(2, 0, 1)
+    loss = out.sum()
+    loss.backward()
+    
+    assert x.grad is not None, "Gradient is None"
+    assert x.grad.shape == (2, 3, 4), f"Gradient shape mismatch: {x.grad.shape}"
+    assert np.allclose(x.grad, np.ones((2, 3, 4))), "Gradient values incorrect"
+
+
+def test_transpose_2d_swap():
+    """Test simple 2D matrix transpose (swap rows and columns)."""
+    data = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)  # (2, 3)
+    x = Tensor(data, requires_grad=True)
+    
+    out = x.transpose(1, 0)  # (2,3) -> (3,2)
+    
+    expected = np.array([[1, 4], [2, 5], [3, 6]], dtype=np.float32)
+    assert out.shape == (3, 2), f"Shape mismatch: {out.shape}"
+    assert np.allclose(out.data, expected), f"Data mismatch: {out.data}"
+
+
+def test_transpose_backward_gradient_flow():
+    """Test that gradients flow correctly through transpose with non-trivial loss."""
+    x = Tensor(np.array([[1, 2], [3, 4]], dtype=np.float32), requires_grad=True)
+    
+    # Transpose then multiply by weights to create asymmetric gradients
+    out = x.transpose(1, 0)  # [[1,3], [2,4]]
+    weights = Tensor(np.array([[1, 0], [0, 2]], dtype=np.float32))
+    weighted = out * weights  # [[1,0], [0,8]]
+    loss = weighted.sum()
+    loss.backward()
+    
+    # Gradient at out: [[1,0], [0,2]] (from weights)
+    # Transpose back: [[1,0], [0,2]].T = [[1,0], [0,2]] (symmetric in this case)
+    expected_grad = np.array([[1, 0], [0, 2]], dtype=np.float32)
+    assert x.grad is not None, "Gradient is None"
+    assert np.allclose(x.grad, expected_grad), f"Gradient mismatch: {x.grad}"
+</file>
+
+<file path="test/test_var.py">
+import numpy as np
+from mytorch.autograd import Tensor
+
+
+def test_var_forward_full():
+    """Test variance over all elements."""
+    x_data = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+    x = Tensor(x_data)
+    
+    out = x.var()
+    
+    expected = np.var(x_data)
+    assert np.allclose(out.data, expected), f"Var mismatch: {out.data} vs {expected}"
+
+
+def test_var_forward_axis0():
+    """Test variance along axis 0."""
+    x_data = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+    x = Tensor(x_data)
+    
+    out = x.var(axis=0)
+    
+    expected = np.var(x_data, axis=0)
+    assert out.shape == expected.shape, f"Shape mismatch: {out.shape} vs {expected.shape}"
+    assert np.allclose(out.data, expected), f"Var mismatch: {out.data} vs {expected}"
+
+
+def test_var_forward_axis1():
+    """Test variance along axis 1 (last axis)."""
+    x_data = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+    x = Tensor(x_data)
+    
+    out = x.var(axis=1)
+    
+    expected = np.var(x_data, axis=1)
+    assert out.shape == expected.shape, f"Shape mismatch: {out.shape} vs {expected.shape}"
+    assert np.allclose(out.data, expected), f"Var mismatch: {out.data} vs {expected}"
+
+
+def test_var_forward_axis_negative():
+    """Test variance along axis -1 (last axis)."""
+    x_data = np.random.randn(2, 3, 4).astype(np.float32)
+    x = Tensor(x_data)
+    
+    out = x.var(axis=-1)
+    
+    expected = np.var(x_data, axis=-1)
+    assert out.shape == expected.shape, f"Shape mismatch: {out.shape} vs {expected.shape}"
+    assert np.allclose(out.data, expected), f"Var mismatch: {out.data} vs {expected}"
+
+
+def test_var_forward_keepdims():
+    """Test variance with keepdims=True."""
+    x_data = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+    x = Tensor(x_data)
+    
+    out = x.var(axis=1, keepdims=True)
+    
+    expected = np.var(x_data, axis=1, keepdims=True)
+    assert out.shape == expected.shape, f"Shape mismatch: {out.shape} vs {expected.shape}"
+    assert np.allclose(out.data, expected), f"Var mismatch: {out.data} vs {expected}"
+
+
+def test_var_backward_exists():
+    """Test that backward pass produces gradients."""
+    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32), requires_grad=True)
+    
+    out = x.var()
+    out.backward()
+    
+    assert x.grad is not None, "Gradient is None"
+    assert x.grad.shape == x.shape, f"Gradient shape mismatch: {x.grad.shape}"
+
+
+def test_var_backward_axis():
+    """Test backward pass with axis parameter."""
+    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32), requires_grad=True)
+    
+    out = x.var(axis=1)
+    loss = out.sum()
+    loss.backward()
+    
+    assert x.grad is not None, "Gradient is None"
+    assert x.grad.shape == x.shape, f"Gradient shape mismatch: {x.grad.shape}"
+
+
+def test_var_backward_numerical():
+    """Test backward pass against numerical gradient."""
+    np.random.seed(42)
+    x_data = np.random.randn(3, 4).astype(np.float32)
+    x = Tensor(x_data.copy(), requires_grad=True)
+    
+    # Forward and backward
+    out = x.var(axis=-1)
+    loss = out.sum()
+    loss.backward()
+    
+    # Numerical gradient
+    eps = 1e-4
+    numerical_grad = np.zeros_like(x_data)
+    for i in range(x_data.shape[0]):
+        for j in range(x_data.shape[1]):
+            x_plus = x_data.copy()
+            x_plus[i, j] += eps
+            x_minus = x_data.copy()
+            x_minus[i, j] -= eps
+            
+            loss_plus = np.var(x_plus, axis=-1).sum()
+            loss_minus = np.var(x_minus, axis=-1).sum()
+            numerical_grad[i, j] = (loss_plus - loss_minus) / (2 * eps)
+    
+    assert x.grad is not None, "Gradient is None"
+    # Use rtol=1e-2 for float32 numerical gradient precision
+    assert np.allclose(x.grad, numerical_grad, rtol=1e-2, atol=1e-5), \
+        f"Gradient mismatch:\nAnalytic:\n{x.grad}\nNumerical:\n{numerical_grad}"
+
+
+def test_var_zero_variance():
+    """Test variance of constant values (should be 0)."""
+    x = Tensor(np.ones((2, 4), dtype=np.float32) * 5)
+    
+    out = x.var(axis=-1)
+    
+    expected = np.zeros(2, dtype=np.float32)
+    assert np.allclose(out.data, expected), f"Var of constant should be 0: {out.data}"
+</file>
+
+<file path="pyproject.toml">
+[project]
+name = "mytorch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.3.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["."]
+</file>
+
+<file path="README.md">
+### Installation
+
+```bash
+uv sync
+```
+
+### Running the MNIST example
+
+```bash
+uv run examples/mnist/mnist.py
+```
+</file>
+
+<file path="examples/mnist/mnist.py">
+# train_mnist.py
+
+import numpy as np
+import sys
+
+import os
+# Ensure project root is on sys.path when running this script directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+# Import utils
+from utils import fetch_mnist
+
+# Import our framework components
+from mytorch.autograd import Tensor
+from mytorch.nn import Module, Linear, ReLU, LogSoftmax, nll_loss
+from mytorch.optim import SGD
+
+# --- 1. Model Definition ---
+
+class SimpleMLP(Module):
+    def __init__(self, input_size: int, hidden_size: int, num_classes: int) -> None:
+        super().__init__()
+        self.fc1 = Linear(input_size, hidden_size)
+        self.relu1 = ReLU()
+        self.fc2 = Linear(hidden_size, num_classes)
+        self.log_softmax = LogSoftmax(axis=1) # Apply softmax along class dimension
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.fc1(x)
+        x = self.relu1(x)
+        x = self.fc2(x)
+        x = self.log_softmax(x)
+        return x
+
 
 # --- 3. Main Training Script ---
 
@@ -308,15 +999,33 @@ class SGD:
 
 class Adam:
     """
-    Implements Adam algorithm.
+    Implements Adam algorithm (Adaptive Moment Estimation).
+    
+    Adam combines two powerful ideas:
+    
+    1. **Momentum (The Engine)**: Keeps a running average of the gradients (the "First Moment", m).
+       This gives the optimizer inertia, allowing it to plow through noisy data and shallow 
+       local minima while maintaining direction. Like a heavy ball rolling downhill, it 
+       accumulates velocity and doesn't get derailed by small bumps.
+    
+    2. **Adaptive Scaling / RMSProp (The Suspension)**: Keeps a running average of the squared 
+       gradients (the "Second Moment", v). This scales the learning rate for each parameter 
+       individually. Parameters with consistently large gradients get smaller effective learning 
+       rates (preventing overshooting), while parameters with small gradients get larger ones 
+       (speeding up learning in flat regions).
+    
+    3. **Bias Correction**: Since m and v are initialized to zero, they're biased toward zero 
+       in early training steps. Bias correction mathematically boosts these moving averages 
+       to compensate, preventing a "slow start" where the optimizer would otherwise take 
+       tiny steps initially.
     """
     params: list[Tensor]
     lr: float
-    beta1: float
-    beta2: float
-    eps: float
-    state: dict[Tensor, dict[str, np.ndarray]]
-    t: int
+    beta1: float  # Exponential decay rate for first moment (momentum)
+    beta2: float  # Exponential decay rate for second moment (RMSProp)
+    eps: float    # Small constant for numerical stability (prevents division by zero)
+    state: dict[Tensor, dict[str, np.ndarray]]  # Per-parameter state (m and v)
+    t: int        # Time step counter (needed for bias correction)
     
     def __init__(self, params: Iterable[Tensor], lr: float = 0.001, betas: tuple[float, float] = (0.9, 0.999), eps: float = 1e-8) -> None:
         self.params = list(params)
@@ -324,7 +1033,7 @@ class Adam:
         self.beta1, self.beta2 = betas
         self.eps = eps
         self.state = {}
-        self.t = 0 # Time step (needed for bias correction)
+        self.t = 0
 
     def step(self) -> None:
         self.t += 1
@@ -334,6 +1043,8 @@ class Adam:
                 continue
 
             # Initialize state for this parameter if it doesn't exist
+            # m: First moment (momentum) - exponential moving average of gradients
+            # v: Second moment (RMSProp) - exponential moving average of squared gradients
             if p not in self.state:
                 self.state[p] = {
                     'm': np.zeros_like(p.data), 
@@ -344,17 +1055,46 @@ class Adam:
             m, v = state['m'], state['v']
             g = p.grad
 
-            # 1. Update raw moving averages (Momentum & RMSProp)
-            # Note: We use in-place operations ([:]) to update the numpy arrays inside the dict
+            # ─────────────────────────────────────────────────────────────────────
+            # 1. MOMENTUM (First Moment) - "The Engine"
+            # ─────────────────────────────────────────────────────────────────────
+            # Exponential moving average of gradients: m = β₁·m + (1-β₁)·g
+            # This smooths out noise in gradients and builds up velocity in 
+            # consistent directions. β₁=0.9 means ~90% of previous momentum is 
+            # retained, giving the optimizer "memory" of past gradient directions.
             m[:] = self.beta1 * m + (1 - self.beta1) * g
+            
+            # ─────────────────────────────────────────────────────────────────────
+            # 2. ADAPTIVE SCALING / RMSProp (Second Moment) - "The Suspension"
+            # ─────────────────────────────────────────────────────────────────────
+            # Exponential moving average of squared gradients: v = β₂·v + (1-β₂)·g²
+            # √v approximates the RMS (root mean square) of recent gradients.
+            # Dividing by √v normalizes the update: large gradients → smaller steps,
+            # small gradients → larger steps. This per-parameter adaptation is key
+            # to handling sparse gradients and varying curvature across dimensions.
             v[:] = self.beta2 * v + (1 - self.beta2) * (g ** 2)
 
-            # 2. Bias Correction
-            # (Boosts magnitude in early steps to counter initialization at zero)
+            # ─────────────────────────────────────────────────────────────────────
+            # 3. BIAS CORRECTION - "The Warm-Up"
+            # ─────────────────────────────────────────────────────────────────────
+            # Problem: m and v are initialized to 0, so early estimates are biased
+            # toward zero. At t=1 with β₁=0.9: m = 0.1·g (only 10% of the gradient!)
+            # 
+            # Solution: Divide by (1 - βᵗ) which starts near 0 and approaches 1.
+            # At t=1: m_hat = m / 0.1 = g (full gradient, as expected)
+            # At t=10: m_hat ≈ m / 0.65 (still boosted)
+            # At t→∞: m_hat ≈ m (correction fades away as bias disappears)
             m_hat = m / (1 - self.beta1 ** self.t)
             v_hat = v / (1 - self.beta2 ** self.t)
 
-            # 3. Update Parameters
+            # ─────────────────────────────────────────────────────────────────────
+            # 4. PARAMETER UPDATE - Putting it all together
+            # ─────────────────────────────────────────────────────────────────────
+            # θ = θ - lr · m_hat / (√v_hat + ε)
+            # 
+            # - m_hat provides direction (momentum-smoothed gradient)
+            # - √v_hat provides per-parameter scaling (adaptive learning rate)
+            # - ε prevents division by zero when v_hat is tiny
             p.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
 
     def zero_grad(self) -> None:
@@ -422,6 +1162,18 @@ class Linear(Module):
     def forward(self, x: Tensor) -> Tensor:
         return (x @ self.weight) + self.bias
 
+class Embedding(Module):
+    """A simple embedding layer."""
+    weight: Tensor
+    
+    def __init__(self, num_embeddings: int, embedding_dim: int) -> None:
+        super().__init__()
+        # Initialize from N(0, 1) to match PyTorch's nn.Embedding default
+        self.weight = Tensor(np.random.normal(0, 1.0, (num_embeddings, embedding_dim)), requires_grad=True)
+        
+    def forward(self, x: Tensor) -> Tensor:
+        return self.weight[x.data]
+
 class ReLU(Module):
     """A simple stateless ReLU activation module."""
     def forward(self, x: Tensor) -> Tensor:
@@ -437,6 +1189,30 @@ class LogSoftmax(Module):
         
     def forward(self, x: Tensor) -> Tensor:
         return x.log_softmax(axis=self.axis)
+
+
+class LayerNorm(Module):
+    """A simple layer normalization module."""
+    normalized_shape: int
+    eps: float
+    weight: Tensor
+    bias: Tensor
+    
+    def __init__(self, normalized_shape: int, eps: float = 1e-5) -> None:
+        super().__init__()
+        self.normalized_shape = normalized_shape
+        self.eps = eps
+        self.weight = Tensor(np.ones(normalized_shape), requires_grad=True)
+        self.bias = Tensor(np.zeros(normalized_shape), requires_grad=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # Always normalize over the last axis (standard LayerNorm behavior)
+        # TODO: optimize this. Instead of using mean and var, use a single pass to compute the mean and variance.
+        mean = x.mean(axis=-1, keepdims=True)
+        variance = x.var(axis=-1, keepdims=True)
+        # TODO: optimize this
+        return (x - mean) / (variance + self.eps) ** 0.5 * self.weight + self.bias
+
 
 # --- Loss Function ---
 
@@ -465,11 +1241,11 @@ class Function:
     Handles the graph creation and provides forward/backward methods.
     """
     
-    inputs: tuple[Tensor, ...]
+    input_tensors: tuple[Tensor, ...]
     """The input tensors that were used to create the output tensor
     (e.g., if output = a + b, then inputs = (a, b)). """
     
-    saved_tensors: tuple[Any, ...]
+    saved_tensors: tuple[np.ndarray, ...]
     """The tensors that were saved for backward pass (e.g., x, y for Mul). """
     
     @classmethod
@@ -480,7 +1256,7 @@ class Function:
         'kwargs' are non-Tensor arguments (e.g., axis for sum).
         """
         ctx = cls()
-        ctx.inputs = inputs
+        ctx.input_tensors = inputs
         
         input_data = [t.data for t in inputs]
         raw_output = ctx.forward(*input_data, **kwargs)
@@ -500,7 +1276,7 @@ class Function:
         if not isinstance(input_grads, tuple):
             input_grads = (input_grads,)
             
-        for tensor, grad in zip(self.inputs, input_grads):
+        for tensor, grad in zip(self.input_tensors, input_grads):
             if tensor.requires_grad and grad is not None:
                 if tensor.grad is None:
                     tensor.grad = np.zeros_like(tensor.data)
@@ -546,8 +1322,8 @@ class Tensor:
     grad: np.ndarray | None
     
     _creator: Function | None
-    """The Function object (e.g., Add, Mul, etc.) that created this Tensor 
-    (or None if leaf tensor). """
+    """The Function object (e.g., Add, Mul, etc.) that created 
+    this Tensor in the forward pass (or None if leaf tensor). """
     
     def __init__(
         self, 
@@ -590,7 +1366,7 @@ class Tensor:
 
             # Process inputs first (ensures topological order)
             if tensor._creator:
-                for inp in tensor._creator.inputs:
+                for inp in tensor._creator.input_tensors:
                     build_topo(inp)
                 topo.append(tensor)
         
@@ -629,6 +1405,9 @@ class Tensor:
     
     def __pow__(self, other: float | int) -> Tensor:
         return Pow.apply(self, c=other) # Pass scalar as kwarg
+    
+    def __truediv__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+        return Div.apply(self, self._as_tensor(other))
 
     # --- Standard Methods ---
     def sum(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
@@ -637,11 +1416,23 @@ class Tensor:
     def mean(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
         return Mean.apply(self, axis=axis, keepdims=keepdims)
     
+    def var(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
+        return Var.apply(self, axis=axis, keepdims=keepdims)
+    
     def relu(self) -> Tensor:
         return ReLU.apply(self)
     
     def log_softmax(self, axis: int = -1) -> Tensor:
         return LogSoftmax.apply(self, axis=axis)
+
+    def __getitem__(self, indices: np.ndarray | Sequence[int] | int) -> Tensor:
+        return Indexing.apply(self, indices=indices)
+
+    def reshape(self, *shape: int) -> Tensor:
+        return Reshape.apply(self, new_shape=shape)
+    
+    def transpose(self, *axes: int) -> Tensor:
+        return Transpose.apply(self, axes=axes)
 
     # --- Properties ---
     @property
@@ -674,6 +1465,19 @@ class Mul(Function):
     def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         x, y = self.saved_tensors
         return grad_output * y, grad_output * x
+
+class Div(Function):
+    @override
+    def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        self.save_for_backward(x, y)
+        return x / y
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        x, y = self.saved_tensors
+        grad_x = grad_output / y           # ∂(x/y)/∂x = 1/y
+        grad_y = -grad_output * x / (y * y)  # ∂(x/y)/∂y = -x/y²
+        return grad_x, grad_y
 
 class Neg(Function):
     @override
@@ -772,6 +1576,39 @@ class Mean(Function):
             grad_output = np.expand_dims(grad_output, self.axis)
         return np.broadcast_to(grad_output, self.input_shape) / self.n
 
+class Var(Function):
+    input_shape: tuple[int, ...]
+    axis: int | tuple[int, ...] | None
+    keepdims: bool
+    n: float
+    
+    @override
+    def forward(self, x: np.ndarray, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> np.ndarray:
+        self.input_shape = x.shape
+        self.axis = axis
+        self.keepdims = keepdims
+        
+        # Compute n (number of elements being reduced)
+        if axis is None:
+            self.n = float(x.size)
+        else:
+            axes = (axis,) if isinstance(axis, int) else axis
+            self.n = float(np.prod([x.shape[ax] for ax in axes]))
+        
+        mean = np.mean(x, axis=axis, keepdims=True)
+        self.save_for_backward(x, mean)
+        return np.var(x, axis=axis, keepdims=keepdims)
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        x, mean = self.saved_tensors
+        
+        if not self.keepdims and self.axis is not None:
+            grad_output = np.expand_dims(grad_output, self.axis)
+        
+        # d_var/d_x_i = (2/n) * (x_i - mean)
+        return grad_output * (2.0 / self.n) * (x - mean)
+
 class LogSoftmax(Function):
     axis: int
     
@@ -791,6 +1628,23 @@ class LogSoftmax(Function):
         softmax_output = np.exp(log_probs)
         grad_sum = np.sum(grad_output, axis=self.axis, keepdims=True)
         return grad_output - (softmax_output * grad_sum)
+
+class Indexing(Function):
+    """Indexing operation for embedding lookups (weight[indices])."""
+    input_shape: tuple[int, ...]
+    indices: np.ndarray[Any, np.dtype[np.intp]]
+    
+    @override
+    def forward(self, x: np.ndarray, indices: np.ndarray) -> np.ndarray:
+        self.input_shape = x.shape
+        self.indices = np.asarray(indices, dtype=np.intp)  # Ensure integer type for indexing
+        return x[self.indices]
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        grad_x = np.zeros(self.input_shape, dtype=np.float32)
+        np.add.at(grad_x, self.indices, grad_output)
+        return grad_x
 
 class NLLLoss(Function):
     n_samples: int
@@ -813,6 +1667,37 @@ class NLLLoss(Function):
         grad_log_probs = np.zeros((self.n_samples, self.n_classes), dtype=np.float32)
         grad_log_probs[range(self.n_samples), self.targets] = -1.0 / self.n_samples
         return grad_log_probs * grad_output, None # No grad for targets
+
+class Reshape(Function):
+    input_shape: tuple[int, ...]
+    new_shape: tuple[int, ...]
+    
+    @override
+    def forward(self, x: np.ndarray, new_shape: tuple[int, ...]) -> np.ndarray:
+        self.input_shape = x.shape
+        self.new_shape = new_shape
+        return x.reshape(new_shape)
+    
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        return grad_output.reshape(self.input_shape)
+
+class Transpose(Function):
+    inverse_axes: tuple[int, ...]
+
+    @override
+    def forward(self, x: np.ndarray, axes: tuple[int, ...]) -> np.ndarray:
+        # Compute inverse permutation for backward pass
+        # If axes[i] = j, then inverse[j] = i
+        inverse_axes = [0] * len(axes)
+        for i, ax in enumerate(axes):
+            inverse_axes[ax] = i
+        self.inverse_axes = tuple(inverse_axes)
+        return x.transpose(axes)
+
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        return grad_output.transpose(self.inverse_axes)
 </file>
 
 </files>
