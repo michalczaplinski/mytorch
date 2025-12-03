@@ -1,0 +1,20 @@
+---
+alwaysApply: true
+---
+
+# Cursor Rules for mytorch
+
+## Package Management
+
+- Use `uv` for all package and project management
+- Dependencies are managed in `pyproject.toml`
+
+## Testing
+
+- Tests are located in the `/test` folder
+- Run all tests with `uv run pytest`
+- Test files should follow the naming convention `test_*.py`
+
+## Type Annotations
+
+- **ALL code MUST use complete type hints**
