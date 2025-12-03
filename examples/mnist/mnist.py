@@ -1,5 +1,3 @@
-# train_mnist.py
-
 import numpy as np
 import sys
 
