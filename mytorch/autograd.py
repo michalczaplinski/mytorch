@@ -455,13 +455,18 @@ class Reshape(Function):
         return grad_output.reshape(self.input_shape)
 
 class Transpose(Function):
-    axes: tuple[int, ...]
+    inverse_axes: tuple[int, ...]
 
     @override
     def forward(self, x: np.ndarray, axes: tuple[int, ...]) -> np.ndarray:
-        self.axes = axes
+        # Compute inverse permutation for backward pass
+        # If axes[i] = j, then inverse[j] = i
+        inverse_axes = [0] * len(axes)
+        for i, ax in enumerate(axes):
+            inverse_axes[ax] = i
+        self.inverse_axes = tuple(inverse_axes)
         return x.transpose(axes)
 
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
-        return grad_output.transpose(self.axes)
+        return grad_output.transpose(self.inverse_axes)
