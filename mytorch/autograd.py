@@ -381,6 +381,27 @@ class Var(Function):
         # d_var/d_x_i = (2/n) * (x_i - mean)
         return grad_output * (2.0 / self.n) * (x - mean)
 
+class Softmax(Function):
+    axis: int
+    
+    @override
+    def forward(self, x: np.ndarray, axis: int = -1) -> np.ndarray:
+        self.axis = axis
+        # Stable softmax: subtract max to prevent exp overflow
+        x_max = x.max(axis=axis, keepdims=True)
+        exps = np.exp(x - x_max)
+        log_probs = exps / exps.sum(axis=axis, keepdims=True)
+        self.save_for_backward(log_probs)
+        return log_probs
+
+    @override
+    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
+        # Gradient of Softmax is complex: S * (grad - sum(S * grad))
+        out, = self.saved_tensors
+        # sum(out * grad) over the axis
+        sum_out_grad = (out * grad_output).sum(axis=self.axis, keepdims=True)
+        return out * (grad_output - sum_out_grad)
+
 class LogSoftmax(Function):
     axis: int
     
