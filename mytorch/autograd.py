@@ -7,19 +7,20 @@ from typing import Any, override
 
 # --- Function Base Class ---
 
+
 class Function:
     """
     Base class for all operations.
     Handles the graph creation and provides forward/backward methods.
     """
-    
+
     input_tensors: tuple[Tensor, ...]
     """The input tensors that were used to create the output tensor
     (e.g., if output = a + b, then inputs = (a, b)). """
-    
+
     saved_tensors: tuple[np.ndarray, ...]
     """The tensors that were saved for backward pass (e.g., x, y for Mul). """
-    
+
     @classmethod
     def apply(cls, *inputs: Tensor, **kwargs: Any) -> Tensor:
         """
@@ -29,14 +30,14 @@ class Function:
         """
         ctx = cls()
         ctx.input_tensors = inputs
-        
+
         input_data = [t.data for t in inputs]
         raw_output = ctx.forward(*input_data, **kwargs)
         # Subclasses should call save_for_backward explicitly if needed
 
         requires_grad = any(t.requires_grad for t in inputs)
         output_tensor = Tensor(raw_output, requires_grad=requires_grad, _creator=ctx)
-        
+
         return output_tensor
 
     def backward(self, grad_output: np.ndarray) -> None:
@@ -44,28 +45,30 @@ class Function:
         Computes gradients for inputs and accumulates them.
         """
         input_grads = self.compute_input_grads(grad_output)
-        
+
         if not isinstance(input_grads, tuple):
             input_grads = (input_grads,)
-            
+
         for tensor, grad in zip(self.input_tensors, input_grads):
             if tensor.requires_grad and grad is not None:
                 if tensor.grad is None:
                     tensor.grad = np.zeros_like(tensor.data)
-                
+
                 tensor.grad += self._unbroadcast_grad(tensor.shape, grad)
 
-    def _unbroadcast_grad(self, target_shape: tuple[int, ...], grad: np.ndarray) -> np.ndarray:
+    def _unbroadcast_grad(
+        self, target_shape: tuple[int, ...], grad: np.ndarray
+    ) -> np.ndarray:
         """
         Helper to correctly sum gradients for broadcasted operations.
         """
         while grad.ndim > len(target_shape):
             grad = grad.sum(axis=0)
-        
+
         for i, dim in enumerate(target_shape):
             if dim == 1:
                 grad = grad.sum(axis=i, keepdims=True)
-        
+
         if grad.shape != target_shape:
             grad = grad.reshape(target_shape)
         return grad
@@ -80,46 +83,53 @@ class Function:
         raise NotImplementedError
 
     @abstractmethod
-    def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray | tuple[np.ndarray | None, ...]:
+    def compute_input_grads(
+        self, grad_output: np.ndarray
+    ) -> np.ndarray | tuple[np.ndarray | None, ...]:
         """(Subclass must implement) The raw gradient logic."""
         raise NotImplementedError
+
 
 class Tensor:
     """
     A simple wrapper for np.ndarray that supports automatic differentiation.
     """
-    
+
     data: np.ndarray
     requires_grad: bool
     grad: np.ndarray | None
-    
+
     _creator: Function | None
     """The Function object (e.g., Add, Mul, etc.) that created 
     this Tensor in the forward pass (or None if leaf tensor). """
-    
+
     def __init__(
-        self, 
-        data: np.ndarray | Sequence[Any] | float | int, 
-        requires_grad: bool = False, 
-        _creator: Function | None = None
+        self,
+        data: np.ndarray | Sequence[Any] | float | int,
+        requires_grad: bool = False,
+        _creator: Function | None = None,
     ) -> None:
         self.data = np.asarray(data, dtype=np.float32)
         self.requires_grad = requires_grad
-        
+
         self.grad = None
         self._creator = _creator
 
     def backward(self, grad_output: np.ndarray | float | int | None = None) -> None:
         if not self.requires_grad:
-            raise RuntimeError("Cannot call backward() on a tensor that does not require grad")
+            raise RuntimeError(
+                "Cannot call backward() on a tensor that does not require grad"
+            )
 
         if self._creator is None:
-            return # Root tensor
+            return  # Root tensor
 
         # We set the gradient to 1 if it is a scalar and None otherwise
         if grad_output is None:
             if self.data.size != 1:
-                raise RuntimeError("grad_output must be specified for non-scalar Tensors")
+                raise RuntimeError(
+                    "grad_output must be specified for non-scalar Tensors"
+                )
             self.grad = np.ones_like(self.data)
         else:
             self.grad = np.asarray(grad_output, dtype=np.float32)
@@ -141,7 +151,7 @@ class Tensor:
                 for inp in tensor._creator.input_tensors:
                     build_topo(inp)
                 topo.append(tensor)
-        
+
         build_topo(self)
 
         # Apply backward pass in reverse topological order
@@ -153,47 +163,65 @@ class Tensor:
         if self.grad is not None:
             self.grad.fill(0.0)
 
-    def _as_tensor(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+    def _as_tensor(
+        self, other: Tensor | np.ndarray | Sequence[Any] | float | int
+    ) -> Tensor:
         """Helper to convert NumPy arrays or scalars to Tensors."""
         if not isinstance(other, Tensor):
             return Tensor(other)
         return other
 
     # --- Overloaded Operators ---
-    def __add__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+    def __add__(
+        self, other: Tensor | np.ndarray | Sequence[Any] | float | int
+    ) -> Tensor:
         return Add.apply(self, self._as_tensor(other))
-    
-    def __mul__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+
+    def __mul__(
+        self, other: Tensor | np.ndarray | Sequence[Any] | float | int
+    ) -> Tensor:
         return Mul.apply(self, self._as_tensor(other))
-    
-    def __matmul__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+
+    def __matmul__(
+        self, other: Tensor | np.ndarray | Sequence[Any] | float | int
+    ) -> Tensor:
         return MatMul.apply(self, self._as_tensor(other))
-    
+
     def __neg__(self) -> Tensor:
         return Neg.apply(self)
-    
-    def __sub__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+
+    def __sub__(
+        self, other: Tensor | np.ndarray | Sequence[Any] | float | int
+    ) -> Tensor:
         return self + (-self._as_tensor(other))
-    
+
     def __pow__(self, other: float | int) -> Tensor:
-        return Pow.apply(self, c=other) # Pass scalar as kwarg
-    
-    def __truediv__(self, other: Tensor | np.ndarray | Sequence[Any] | float | int) -> Tensor:
+        return Pow.apply(self, c=other)  # Pass scalar as kwarg
+
+    def __truediv__(
+        self, other: Tensor | np.ndarray | Sequence[Any] | float | int
+    ) -> Tensor:
         return Div.apply(self, self._as_tensor(other))
 
     # --- Standard Methods ---
-    def sum(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
+    def sum(
+        self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Tensor:
         return Sum.apply(self, axis=axis, keepdims=keepdims)
-    
-    def mean(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
+
+    def mean(
+        self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Tensor:
         return Mean.apply(self, axis=axis, keepdims=keepdims)
-    
-    def var(self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> Tensor:
+
+    def var(
+        self, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Tensor:
         return Var.apply(self, axis=axis, keepdims=keepdims)
-    
+
     def relu(self) -> Tensor:
         return ReLU.apply(self)
-    
+
     def log_softmax(self, axis: int = -1) -> Tensor:
         return LogSoftmax.apply(self, axis=axis)
 
@@ -202,7 +230,7 @@ class Tensor:
 
     def reshape(self, *shape: int) -> Tensor:
         return Reshape.apply(self, new_shape=shape)
-    
+
     def transpose(self, *axes: int) -> Tensor:
         return Transpose.apply(self, axes=axes)
 
@@ -210,130 +238,147 @@ class Tensor:
     @property
     def shape(self) -> tuple[int, ...]:
         return self.data.shape
-    
+
     @property
     def dtype(self) -> np.dtype:
         return self.data.dtype
-    
+
     def __repr__(self) -> str:
         return f"Tensor({self.data}, requires_grad={self.requires_grad})"
+
 
 class Add(Function):
     @override
     def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         return x + y
-    
+
     @override
-    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def compute_input_grads(
+        self, grad_output: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         return grad_output, grad_output
+
 
 class Mul(Function):
     @override
     def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         self.save_for_backward(x, y)
         return x * y
-    
+
     @override
-    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def compute_input_grads(
+        self, grad_output: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         x, y = self.saved_tensors
         return grad_output * y, grad_output * x
+
 
 class Div(Function):
     @override
     def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         self.save_for_backward(x, y)
         return x / y
-    
+
     @override
-    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def compute_input_grads(
+        self, grad_output: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         x, y = self.saved_tensors
-        grad_x = grad_output / y           # ∂(x/y)/∂x = 1/y
+        grad_x = grad_output / y  # ∂(x/y)/∂x = 1/y
         grad_y = -grad_output * x / (y * y)  # ∂(x/y)/∂y = -x/y²
         return grad_x, grad_y
+
 
 class Neg(Function):
     @override
     def forward(self, x: np.ndarray) -> np.ndarray:
         return -x
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
         return -grad_output
 
+
 class Pow(Function):
     c: float | int
-    
+
     @override
     def forward(self, x: np.ndarray, c: float | int) -> np.ndarray:
         self.save_for_backward(x)
         self.c = c
-        return x ** c
-    
+        return x**c
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
-        x, = self.saved_tensors
+        (x,) = self.saved_tensors
         return grad_output * (self.c * (x ** (self.c - 1)))
+
 
 class MatMul(Function):
     @override
     def forward(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         self.save_for_backward(x, y)
         return x @ y
-    
+
     @override
-    def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def compute_input_grads(
+        self, grad_output: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         x, y = self.saved_tensors
         grad_x = grad_output @ y.T
         grad_y = x.T @ grad_output
         return grad_x, grad_y
 
+
 class ReLU(Function):
     mask: np.ndarray
-    
+
     @override
     def forward(self, x: np.ndarray) -> np.ndarray:
-        self.mask = (x > 0)
+        self.mask = x > 0
         return x * self.mask
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
         return grad_output * self.mask
+
 
 class Sum(Function):
     input_shape: tuple[int, ...]
     axis: int | tuple[int, ...] | None
     keepdims: bool
-    
+
     @override
     def forward(
-        self, 
-        x: np.ndarray, 
-        axis: int | tuple[int, ...] | None = None, 
-        keepdims: bool = False
+        self,
+        x: np.ndarray,
+        axis: int | tuple[int, ...] | None = None,
+        keepdims: bool = False,
     ) -> np.ndarray:
         self.input_shape = x.shape
         self.axis = axis
         self.keepdims = keepdims
         return np.sum(x, axis=axis, keepdims=keepdims)
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
         if not self.keepdims and self.axis is not None:
             grad_output = np.expand_dims(grad_output, self.axis)
         return np.broadcast_to(grad_output, self.input_shape)
 
+
 class Mean(Function):
     input_shape: tuple[int, ...]
     n: float
     axis: int | tuple[int, ...] | None
     keepdims: bool
-    
+
     @override
     def forward(
-        self, 
-        x: np.ndarray, 
-        axis: int | tuple[int, ...] | None = None, 
-        keepdims: bool = False
+        self,
+        x: np.ndarray,
+        axis: int | tuple[int, ...] | None = None,
+        keepdims: bool = False,
     ) -> np.ndarray:
         self.input_shape = x.shape
         output_shape = np.mean(x, axis=axis, keepdims=keepdims).shape
@@ -341,49 +386,56 @@ class Mean(Function):
         self.axis = axis
         self.keepdims = keepdims
         return np.mean(x, axis=axis, keepdims=keepdims)
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
         if not self.keepdims and self.axis is not None:
             grad_output = np.expand_dims(grad_output, self.axis)
         return np.broadcast_to(grad_output, self.input_shape) / self.n
 
+
 class Var(Function):
     input_shape: tuple[int, ...]
     axis: int | tuple[int, ...] | None
     keepdims: bool
     n: float
-    
+
     @override
-    def forward(self, x: np.ndarray, axis: int | tuple[int, ...] | None = None, keepdims: bool = False) -> np.ndarray:
+    def forward(
+        self,
+        x: np.ndarray,
+        axis: int | tuple[int, ...] | None = None,
+        keepdims: bool = False,
+    ) -> np.ndarray:
         self.input_shape = x.shape
         self.axis = axis
         self.keepdims = keepdims
-        
+
         # Compute n (number of elements being reduced)
         if axis is None:
             self.n = float(x.size)
         else:
             axes = (axis,) if isinstance(axis, int) else axis
             self.n = float(np.prod([x.shape[ax] for ax in axes]))
-        
+
         mean = np.mean(x, axis=axis, keepdims=True)
         self.save_for_backward(x, mean)
         return np.var(x, axis=axis, keepdims=keepdims)
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
         x, mean = self.saved_tensors
-        
+
         if not self.keepdims and self.axis is not None:
             grad_output = np.expand_dims(grad_output, self.axis)
-        
+
         # d_var/d_x_i = (2/n) * (x_i - mean)
         return grad_output * (2.0 / self.n) * (x - mean)
 
+
 class Softmax(Function):
     axis: int
-    
+
     @override
     def forward(self, x: np.ndarray, axis: int = -1) -> np.ndarray:
         self.axis = axis
@@ -397,14 +449,15 @@ class Softmax(Function):
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
         # Gradient of Softmax is complex: S * (grad - sum(S * grad))
-        out, = self.saved_tensors
+        (out,) = self.saved_tensors
         # sum(out * grad) over the axis
         sum_out_grad = (out * grad_output).sum(axis=self.axis, keepdims=True)
         return out * (grad_output - sum_out_grad)
 
+
 class LogSoftmax(Function):
     axis: int
-    
+
     @override
     def forward(self, x: np.ndarray, axis: int = -1) -> np.ndarray:
         self.axis = axis
@@ -414,39 +467,44 @@ class LogSoftmax(Function):
         log_probs = (x - max_x) - np.log(sum_exp_x)
         self.save_for_backward(log_probs)
         return log_probs
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
-        log_probs, = self.saved_tensors
+        (log_probs,) = self.saved_tensors
         softmax_output = np.exp(log_probs)
         grad_sum = np.sum(grad_output, axis=self.axis, keepdims=True)
         return grad_output - (softmax_output * grad_sum)
 
+
 class Indexing(Function):
     """Indexing operation for embedding lookups (weight[indices])."""
+
     input_shape: tuple[int, ...]
     indices: np.ndarray[Any, np.dtype[np.intp]]
-    
+
     @override
     def forward(self, x: np.ndarray, indices: np.ndarray) -> np.ndarray:
         self.input_shape = x.shape
-        self.indices = np.asarray(indices, dtype=np.intp)  # Ensure integer type for indexing
+        self.indices = np.asarray(
+            indices, dtype=np.intp
+        )  # Ensure integer type for indexing
         return x[self.indices]
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
         grad_x = np.zeros(self.input_shape, dtype=np.float32)
         np.add.at(grad_x, self.indices, grad_output)
         return grad_x
 
+
 class NLLLoss(Function):
     n_samples: int
     n_classes: int
     targets: np.ndarray
-    
+
     @override
     def forward(self, log_probs: np.ndarray, **kwargs: Any) -> np.ndarray:
-        targets = kwargs.get('targets')
+        targets = kwargs.get("targets")
         if targets is None:
             raise ValueError("targets must be provided")
         self.targets = targets
@@ -454,26 +512,28 @@ class NLLLoss(Function):
         self.n_samples, self.n_classes = n_samples, n_classes
         correct_log_probs = log_probs[range(n_samples), targets]
         return -correct_log_probs.mean()
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> tuple[np.ndarray, None]:
         grad_log_probs = np.zeros((self.n_samples, self.n_classes), dtype=np.float32)
         grad_log_probs[range(self.n_samples), self.targets] = -1.0 / self.n_samples
-        return grad_log_probs * grad_output, None # No grad for targets
+        return grad_log_probs * grad_output, None  # No grad for targets
+
 
 class Reshape(Function):
     input_shape: tuple[int, ...]
     new_shape: tuple[int, ...]
-    
+
     @override
     def forward(self, x: np.ndarray, new_shape: tuple[int, ...]) -> np.ndarray:
         self.input_shape = x.shape
         self.new_shape = new_shape
         return x.reshape(new_shape)
-    
+
     @override
     def compute_input_grads(self, grad_output: np.ndarray) -> np.ndarray:
         return grad_output.reshape(self.input_shape)
+
 
 class Transpose(Function):
     inverse_axes: tuple[int, ...]
