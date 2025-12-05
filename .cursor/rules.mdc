@@ -15,6 +15,11 @@ alwaysApply: true
 - Run all tests with `uv run pytest`
 - Test files should follow the naming convention `test_*.py`
 
+## Code Style
+
+- Use the `ruff` formatter for all code.
+- Invoke it with `uv run ruff format`
+
 ## Type Annotations
 
 - **ALL code MUST use complete type hints**
